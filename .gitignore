@@ -1,0 +1,34 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+lib/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Tooling
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
+# Local databases / vector stores
+*.db
+chroma/
+chromadb/
+chroma_db/
+data/
