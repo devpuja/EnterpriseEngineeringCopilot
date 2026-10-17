@@ -1,0 +1,33 @@
+
+from fastapi import FastAPI
+
+from app.api.architecture import router as architecture_router
+from app.config.settings import settings
+
+app = FastAPI(
+    title=settings.app_name,
+    version="0.2.0",
+    description=(
+        "An agentic AI copilot for software architecture "
+        "analysis and decision support."
+    ),
+)
+
+app.include_router(architecture_router)
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "application": settings.app_name,
+        "environment": settings.app_env,
+    }
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Enterprise Engineering Copilot API",
+        "docs": "/docs",
+    }

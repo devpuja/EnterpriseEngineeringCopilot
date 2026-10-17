@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-dotenv
+
+agent-framework
+agent-framework-ollama
+agent-framework-openai
+
+pytest
+httpx
