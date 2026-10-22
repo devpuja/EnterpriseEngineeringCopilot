@@ -22,6 +22,7 @@ async def health_check():
         "status": "healthy",
         "application": settings.app_name,
         "environment": settings.app_env,
+        "model_provider": settings.model_provider.lower(),
     }
 
 

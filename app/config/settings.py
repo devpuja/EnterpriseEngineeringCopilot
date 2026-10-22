@@ -1,31 +1,29 @@
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Enterprise Engineering Copilot"
-    app_env: str = "development"
-    log_level: str = "INFO"
+    app_name: str
+    app_env: str
+    log_level: str
 
-    # Select: ollama or openai
-    model_provider: str = "ollama"
+    model_provider: str
 
-    # Ollama configuration
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:latest"
+    ollama_base_url: str
+    ollama_model: str
 
-    # OpenAI configuration
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_api_key: str
+    openai_model: str
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
 
-settings = Settings()
+settings = Settings()  # pyright: ignore[reportCallIssue]
 
 
 def validate_model_settings() -> None:
