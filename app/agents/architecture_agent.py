@@ -5,6 +5,7 @@ import logging
 
 from agent_framework import Agent
 from pydantic import ValidationError
+from app.services.diagram_validator import validate_mermaid_flowchart
 
 from app.api.schemas import ArchitectureResponse
 from app.services.model_client import create_model_client
@@ -175,7 +176,23 @@ class ArchitectureAgent:
             payload["agent"] = "ArchitectureAgent"
             payload["model_provider"] = model_provider.lower()
 
-            return ArchitectureResponse.model_validate(payload)
+            # return ArchitectureResponse.model_validate(payload)
+            architecture_response = ArchitectureResponse.model_validate(payload)
+
+            diagram_errors = validate_mermaid_flowchart(
+                architecture_response.architecture.mermaid_diagram
+            )
+
+            if diagram_errors:
+                logger.warning(
+                    "Architecture diagram validation failed: %s",
+                    "; ".join(diagram_errors),
+                )
+                raise ValueError(
+                    "The model returned an invalid Mermaid diagram."
+                )
+
+            return architecture_response
 
         except ValidationError as exc:
             logger.warning(
