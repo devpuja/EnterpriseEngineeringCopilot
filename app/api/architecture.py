@@ -1,13 +1,12 @@
 
 import logging
+import time
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
 from app.agents.architecture_agent import ArchitectureAgent
-from app.api.schemas import (
-    ArchitectureRequest,
-    ArchitectureResponse,
-)
+from app.api.schemas import ArchitectureRequest, ArchitectureResponse
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -20,23 +19,75 @@ router = APIRouter(
 architecture_agent = ArchitectureAgent()
 
 
+
 @router.post("/design", response_model=ArchitectureResponse)
 async def design_architecture(request: ArchitectureRequest) -> ArchitectureResponse:
+    request_id = str(uuid4())
+    started_at = time.perf_counter()
+    provider = settings.model_provider.lower()
+
+    logger.info(
+        "event=architecture_generation_started request_id=%s provider=%s",
+        request_id,
+        provider,
+    )
+
     try:
-        return await architecture_agent.design(
+        response = await architecture_agent.design(
             requirements=request.requirements,
-            model_provider=settings.model_provider,
+            model_provider=provider,
         )
 
+        duration_ms = round(
+            (time.perf_counter() - started_at) * 1000,
+            2,
+        )
+
+        logger.info(
+            "event=architecture_generation_succeeded "
+            "request_id=%s provider=%s duration_ms=%.2f",
+            request_id,
+            provider,
+            duration_ms,
+        )
+
+        return response
+
     except ValueError as exc:
-        logger.warning("Architecture output validation failed: %s", exc)
+        duration_ms = round(
+            (time.perf_counter() - started_at) * 1000,
+            2,
+        )
+
+        logger.warning(
+            "event=architecture_generation_invalid_output "
+            "request_id=%s provider=%s duration_ms=%.2f error_type=%s",
+            request_id,
+            provider,
+            duration_ms,
+            type(exc).__name__,
+        )
+
         raise HTTPException(
             status_code=502,
             detail="The model returned an invalid architecture response.",
         ) from exc
 
     except Exception as exc:
-        logger.exception("Architecture generation failed")
+        duration_ms = round(
+            (time.perf_counter() - started_at) * 1000,
+            2,
+        )
+
+        logger.exception(
+            "event=architecture_generation_failed "
+            "request_id=%s provider=%s duration_ms=%.2f error_type=%s",
+            request_id,
+            provider,
+            duration_ms,
+            type(exc).__name__,
+        )
+
         raise HTTPException(
             status_code=502,
             detail="Architecture generation failed. Check application logs.",

@@ -1,8 +1,17 @@
 
+import logging
+
 from fastapi import FastAPI
 
 from app.api.architecture import router as architecture_router
 from app.config.settings import settings
+
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    force=True,
+)
 
 app = FastAPI(
     title=settings.app_name,
@@ -22,7 +31,6 @@ async def health_check():
         "status": "healthy",
         "application": settings.app_name,
         "environment": settings.app_env,
-        "model_provider": settings.model_provider.lower(),
     }
 
 
