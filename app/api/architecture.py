@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
-from app.agents.architecture_agent import ArchitectureAgent
+from app.orchestrator.architecture_orchestrator import ArchitectureOrchestrator
 from app.api.schemas import ArchitectureRequest, ArchitectureResponse
 from app.config.settings import settings
 
@@ -16,8 +16,7 @@ router = APIRouter(
     tags=["Architecture"],
 )
 
-architecture_agent = ArchitectureAgent()
-
+architecture_agent = ArchitectureOrchestrator()
 
 
 @router.post("/design", response_model=ArchitectureResponse)
@@ -38,10 +37,7 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
             model_provider=provider,
         )
 
-        duration_ms = round(
-            (time.perf_counter() - started_at) * 1000,
-            2,
-        )
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
         logger.info(
             "event=architecture_generation_succeeded "
@@ -54,10 +50,7 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
         return response
 
     except ValueError as exc:
-        duration_ms = round(
-            (time.perf_counter() - started_at) * 1000,
-            2,
-        )
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
         logger.warning(
             "event=architecture_generation_invalid_output "
@@ -74,10 +67,7 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
         ) from exc
 
     except Exception as exc:
-        duration_ms = round(
-            (time.perf_counter() - started_at) * 1000,
-            2,
-        )
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
         logger.exception(
             "event=architecture_generation_failed "

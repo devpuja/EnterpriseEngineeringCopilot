@@ -15,6 +15,7 @@ class RequirementAnalysis(BaseModel):
     non_functional_requirements: list[str]
     assumptions: list[str]
     open_questions: list[str]
+    constraints: list[str] = Field(default_factory=list)
 
 
 class ArchitectureComponent(BaseModel):

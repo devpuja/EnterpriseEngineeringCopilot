@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic-settings
 python-dotenv
+pytest-asyncio
 
 agent-framework
 agent-framework-ollama

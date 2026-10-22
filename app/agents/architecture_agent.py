@@ -7,7 +7,7 @@ from agent_framework import Agent
 from pydantic import ValidationError
 from app.services.diagram_validator import validate_mermaid_flowchart
 
-from app.api.schemas import ArchitectureResponse
+from app.api.schemas import ArchitectureResponse, RequirementAnalysis
 from app.services.model_client import create_model_client
 
 logger = logging.getLogger(__name__)
@@ -109,51 +109,75 @@ class ArchitectureAgent:
             instructions=ARCHITECTURE_INSTRUCTIONS,
         )
 
+    
     async def design(
         self,
         requirements: str,
         model_provider: str,
+        requirements_analysis: RequirementAnalysis | None = None,
     ) -> ArchitectureResponse:
+        analysis_context = ""
+
+        if requirements_analysis is not None:
+            analysis_context = (
+                "\n\nValidated analysis from the Requirements Analysis Agent:\n"
+                f"{requirements_analysis.model_dump_json(indent=2)}\n\n"
+                "Use this analysis as the authoritative classification of "
+                "requirements, assumptions, constraints, and open questions. "
+                "Do not silently omit or contradict it. If you identify a "
+                "material inconsistency, explain it in the appropriate "
+                "response fields."
+            )
+
         prompt = (
             "Analyze the following software requirements and produce a "
             "complete enterprise architecture recommendation.\n\n"
-            f"Requirements:\n{requirements}\n\n"
+            f"Requirements:\n{requirements}\n"
+            f"{analysis_context}\n\n"
             f"Configured model provider: {model_provider.lower()}.\n"
             "Populate every required field in the requested response schema. "
             "Use valid Mermaid flowchart syntax for the architecture diagram."
         )
 
+
         try:
+            
             result = await self._agent.run(
                 prompt,
                 options={
                     "response_format": ArchitectureResponse,
                 },
             )
-            result_value: Any = getattr(result, "value")
 
-            # Case 1: The framework returned the Pydantic model directly.
+            result_value: Any = getattr(result, "value", None)
+
+            # Normalize all supported response formats into a dictionary.
+            payload: Any
             if isinstance(result_value, ArchitectureResponse):
-                return result_value.model_copy(
-                    update={
-                        "agent": "ArchitectureAgent",
-                        "model_provider": model_provider.lower(),
-                    }
-                )
+                payload = result_value.model_dump()
 
-            # Case 2: The framework returned a parsed JSON dictionary.
-            if isinstance(result_value, dict):
+            elif isinstance(result_value, dict):
                 payload = cast(dict[str, Any], result_value)
+
             else:
-                # Case 3: Fall back to parsing the response text.
-                raw_text = result.text.strip()
+                raw_text = getattr(result, "text", None)
+
+                if not isinstance(raw_text, str) or not raw_text.strip():
+                    raise ValueError(
+                        "The model returned no architecture response."
+                    )
+
+                raw_text = raw_text.strip()
 
                 if raw_text.startswith("```"):
                     lines = raw_text.splitlines()
+
                     if lines and lines[0].startswith("```"):
                         lines = lines[1:]
+
                     if lines and lines[-1].strip() == "```":
                         lines = lines[:-1]
+
                     raw_text = "\n".join(lines).strip()
 
                 try:
@@ -172,13 +196,22 @@ class ArchitectureAgent:
                     "The model response must be a JSON object."
                 )
 
-            # Set these values in the application, not from model output.
+            # These values are controlled by the application.
             payload["agent"] = "ArchitectureAgent"
             payload["model_provider"] = model_provider.lower()
 
-            # return ArchitectureResponse.model_validate(payload)
-            architecture_response = ArchitectureResponse.model_validate(payload)
+            # Preserve the independently validated analysis instead of
+            # allowing the Architecture Agent to silently replace it.
+            if requirements_analysis is not None:
+                payload["requirements_analysis"] = (
+                    requirements_analysis.model_dump()
+                )
 
+            architecture_response = ArchitectureResponse.model_validate(
+                payload
+            )
+
+            # Always validate the diagram, regardless of the response format.
             diagram_errors = validate_mermaid_flowchart(
                 architecture_response.architecture.mermaid_diagram
             )
