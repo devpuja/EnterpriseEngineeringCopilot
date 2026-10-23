@@ -5,6 +5,7 @@ import pytest
 
 from app.api.schemas import (
     ArchitectureDesign,
+    ArchitectureReview,
     ArchitectureResponse,
     RequirementAnalysis,
 )
@@ -70,6 +71,16 @@ class FakeArchitectureAgent:
         return self.response
 
 
+class FakeArchitectureReviewAgent:
+    def __init__(self, review: ArchitectureReview) -> None:
+        self.review_result = review
+        self.received_response: ArchitectureResponse | None = None
+
+    async def review(self, response: ArchitectureResponse) -> ArchitectureReview:
+        self.received_response = response
+        return self.review_result
+
+
 @pytest.mark.asyncio
 async def test_orchestrator_passes_analysis_to_architecture_agent() -> None:
     requirements = "Build an Azure application for PDF processing."
@@ -78,10 +89,17 @@ async def test_orchestrator_passes_analysis_to_architecture_agent() -> None:
 
     requirements_agent = FakeRequirementsAgent(analysis)
     architecture_agent = FakeArchitectureAgent(expected_response)
+    review = ArchitectureReview(
+        summary="The proposed architecture passed the test review.",
+        findings=[],
+        approval_recommendation="approve",
+    )
+    architecture_review_agent = FakeArchitectureReviewAgent(review)
 
     orchestrator = ArchitectureOrchestrator(
         requirements_agent=cast(Any, requirements_agent),
         architecture_agent=cast(Any, architecture_agent),
+        architecture_review_agent=cast(Any, architecture_review_agent),
     )
 
     result = await orchestrator.design(
@@ -89,11 +107,16 @@ async def test_orchestrator_passes_analysis_to_architecture_agent() -> None:
         model_provider="openai",
     )
 
-    assert result is expected_response
+    assert result is not expected_response
+    assert result.architecture == expected_response.architecture
     assert requirements_agent.received_requirements == requirements
     assert architecture_agent.received_requirements == requirements
     assert architecture_agent.received_provider == "openai"
     assert architecture_agent.received_analysis == analysis
+    assert result.review == review
+    assert architecture_review_agent.received_response == expected_response
+    assert architecture_review_agent.received_response is not None
+    assert architecture_review_agent.received_response.review is None
 
 
 @pytest.mark.asyncio

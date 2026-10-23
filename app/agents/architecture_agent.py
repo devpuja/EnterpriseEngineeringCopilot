@@ -7,7 +7,7 @@ from agent_framework import Agent
 from pydantic import ValidationError
 from app.services.diagram_validator import validate_mermaid_flowchart
 
-from app.api.schemas import ArchitectureResponse, RequirementAnalysis
+from app.api.schemas import ArchitectureResponse, RequirementAnalysis, ArchitectureReview
 from app.services.model_client import create_model_client
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,8 @@ class ArchitectureAgent:
         requirements: str,
         model_provider: str,
         requirements_analysis: RequirementAnalysis | None = None,
-    ) -> ArchitectureResponse:
+        review_feedback: ArchitectureReview | None = None) -> ArchitectureResponse:
+        
         analysis_context = ""
 
         if requirements_analysis is not None:
@@ -138,6 +139,18 @@ class ArchitectureAgent:
             "Populate every required field in the requested response schema. "
             "Use valid Mermaid flowchart syntax for the architecture diagram."
         )
+
+        if review_feedback is not None:
+            prompt += (
+                "\n\nARCHITECTURE REVISION REQUIRED\n"
+                "Review the previous architecture and address the findings below.\n"
+                "Preserve the original business requirements and constraints.\n"
+                "Fix the identified issues without introducing unsupported "
+                "requirements or unnecessary components.\n"
+                "Return the complete revised architecture, not a partial patch.\n\n"
+                "Review findings:\n"
+                f"{review_feedback.model_dump_json(indent=2)}"
+            )
 
 
         try:

@@ -1,7 +1,34 @@
 
 from pydantic import BaseModel, Field
+from typing import Literal 
 
 
+class ArchitectureReviewFinding(BaseModel):
+    severity: Literal["critical", "high", "medium", "low"]
+    category: Literal[
+        "security",
+        "reliability",
+        "consistency",
+        "scalability",
+        "maintainability",
+        "data_flow",
+        "cost",
+    ]
+    finding: str
+    evidence: str
+    recommendation: str
+
+
+class ArchitectureReview(BaseModel):
+    summary: str
+    findings: list[ArchitectureReviewFinding]
+    approval_recommendation: Literal[
+        "approve",
+        "revise",
+        "needs_human_review",
+    ]
+
+    
 class ArchitectureRequest(BaseModel):
     requirements: str = Field(
         min_length=10,
@@ -53,3 +80,4 @@ class ArchitectureResponse(BaseModel):
     decisions: list[ArchitectureDecision]
     risks: list[ArchitectureRisk]
     next_steps: list[str]
+    review: ArchitectureReview | None = None
