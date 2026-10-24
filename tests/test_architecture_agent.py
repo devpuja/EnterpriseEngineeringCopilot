@@ -97,6 +97,7 @@ def test_design_accepts_structured_model_response() -> None:
         assert "Build a multi-tenant PDF processing platform" in fake_agent.prompt
         assert fake_agent.options == {
             "response_format": ArchitectureResponse,
+            "max_tokens": 12000,
         }
 
     asyncio.run(scenario())

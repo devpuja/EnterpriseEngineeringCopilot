@@ -252,6 +252,150 @@ def test_explicit_result_store_satisfies_persistence_check():
     )
 
 
+
+def test_explicit_result_retrieval_endpoint_satisfies_retrieval_check():
+    response = make_architecture_response()
+    response.architecture.components.append(
+        ArchitectureComponent(
+            name="Processing Results Store",
+            responsibility="Persistently stores processed results.",
+            technology="Azure Blob Storage",
+            rationale="Stores processed results for later retrieval.",
+        )
+    )
+    response.architecture.data_flow = [
+        "The client requests GET /jobs/{jobId}/results through API Gateway.",
+        "The API validates identity and tenant authorization.",
+        "The service reads the result reference from Processing Status Store.",
+        "The service fetches the result from Processing Results Store and returns it.",
+    ]
+
+    findings = run_deterministic_architecture_checks(response)
+
+    assert not any(
+        finding.category == "data_flow"
+        and "api path for retrieving" in finding.finding.lower()
+        for finding in findings
+    )
+    assert not any(
+        finding.category == "data_flow"
+        and "persistent storage" in finding.finding.lower()
+        for finding in findings
+    )
+
+
+def test_risk_mitigation_alone_does_not_prove_tenant_isolation():
+    response = make_architecture_response()
+    response.risks.append(
+        ArchitectureRisk(
+            risk="Cross-tenant data exposure.",
+            impact="A tenant may access another tenant's data.",
+            mitigation="Implement tenant-scoped authorization on every request.",
+        )
+    )
+
+    findings = run_deterministic_architecture_checks(response)
+
+    assert any(
+        finding.category == "security"
+        and "tenant-scoped authorization" in finding.finding.lower()
+        for finding in findings
+    )
+
+
+def test_bounded_retries_without_limit_and_backoff_are_underspecified():
+    response = make_architecture_response()
+    response.architecture.components.extend(
+        [
+            ArchitectureComponent(
+                name="Message Queue",
+                responsibility="Queues asynchronous jobs with bounded retries.",
+                technology="Azure Service Bus",
+                rationale="Decouples processing from requests.",
+            ),
+            ArchitectureComponent(
+                name="Processing Worker",
+                responsibility="Processes queued jobs.",
+                technology="Azure Functions",
+                rationale="Runs processing tasks in the background.",
+            ),
+        ]
+    )
+    response.architecture.data_flow = [
+        "API sends jobs to Message Queue.",
+        "Processing Worker consumes messages.",
+    ]
+
+    findings = run_deterministic_architecture_checks(response)
+
+    assert any(
+        finding.category == "reliability"
+        and "retry policy details are underspecified" in finding.finding.lower()
+        for finding in findings
+    )
+
+
+def test_retry_limit_and_backoff_are_recognized_as_policy_details():
+    response = make_architecture_response()
+    response.architecture.components.extend(
+        [
+            ArchitectureComponent(
+                name="Message Queue",
+                responsibility="Queues asynchronous jobs with a maximum of 5 attempts and exponential backoff.",
+                technology="Azure Service Bus",
+                rationale="Defines bounded retries for transient errors.",
+            ),
+            ArchitectureComponent(
+                name="Processing Worker",
+                responsibility="Processes queued jobs idempotently.",
+                technology="Azure Functions",
+                rationale="Runs processing tasks in the background.",
+            ),
+        ]
+    )
+    
+    response.architecture.data_flow = [
+        "The worker retries transient failures up to 5 attempts "
+        "using exponential backoff. Non-retryable errors are not retried."
+    ]
+
+    findings = run_deterministic_architecture_checks(response)
+
+    assert not any(
+        finding.category == "reliability"
+        and "retry policy details" in finding.finding.lower()
+        for finding in findings
+    )
+
+
+def test_merge_keeps_finding_evidence_and_recommendation_together():
+    lower_severity = ArchitectureReviewFinding(
+        severity="medium",
+        category="security",
+        finding="Tenant isolation needs clarification.",
+        evidence=(
+            "The design discusses tenant-specific encryption, key rotation, "
+            "and secure storage but does not establish request-level authorization."
+        ),
+        recommendation="Document key rotation, encryption scope, and storage controls in detail.",
+    )
+    higher_severity = ArchitectureReviewFinding(
+        severity="high",
+        category="security",
+        finding="Tenant-scoped authorization is not demonstrated.",
+        evidence="The authenticated tenant identity is not enforced during result retrieval.",
+        recommendation="Derive tenant context from identity and authorize each result retrieval.",
+    )
+
+    merged = merge_review_findings([lower_severity, higher_severity])
+
+    assert len(merged) == 1
+    assert merged[0].severity == "high"
+    assert merged[0].finding == higher_severity.finding
+    assert merged[0].evidence == higher_severity.evidence
+    assert merged[0].recommendation == higher_severity.recommendation
+
+
 def test_semantically_duplicate_tenant_findings_are_merged():
     findings = [
         ArchitectureReviewFinding(
@@ -336,6 +480,97 @@ def test_review_finding_merge_removes_repeated_adjacent_words():
     assert "handling handling" not in merged[0].recommendation.lower()
 
 
+def test_auth_provider_alias_matches_authentication_provider():
+    response = make_architecture_response()
+
+    response.architecture.components.append(
+        ArchitectureComponent(
+            name="Authentication Provider",
+            responsibility="Authenticates API callers.",
+            technology="Microsoft Entra ID",
+            rationale="Provides centralized identity management.",
+        )
+    )
+    response.architecture.mermaid_diagram = (
+        'flowchart LR\n'
+        '    auth["Auth Provider"]'
+    )
+
+    findings = run_deterministic_architecture_checks(response)
+
+    assert not any(
+        finding.category == "consistency"
+        and "Auth Provider" in finding.finding
+        for finding in findings
+    )
+
+
+def test_duplicate_retry_policy_findings_are_merged_but_idempotency_is_preserved():
+    findings = [
+        ArchitectureReviewFinding(
+            severity="medium",
+            category="reliability",
+            finding=(
+                "Unspecified retry limits and backoff strategies "
+                "for message processing"
+            ),
+            evidence=(
+                "The design mentions retries but does not specify "
+                "limits or backoff."
+            ),
+            recommendation=(
+                "Define retry limits and a backoff strategy."
+            ),
+        ),
+        ArchitectureReviewFinding(
+            severity="medium",
+            category="reliability",
+            finding="Retry policy details are underspecified.",
+            evidence=(
+                "The architecture does not specify a maximum "
+                "retry-attempt count."
+            ),
+            recommendation=(
+                "Specify maximum attempts and handling for "
+                "non-retryable failures."
+            ),
+        ),
+        ArchitectureReviewFinding(
+            severity="medium",
+            category="reliability",
+            finding="Explicit idempotency handling is not described.",
+            evidence=(
+                "Message redelivery may repeat processing."
+            ),
+            recommendation=(
+                "Make message processing idempotent."
+            ),
+        ),
+    ]
+
+    merged = merge_review_findings(findings)
+
+    assert len(merged) == 2
+
+    retry_findings = [
+        finding
+        for finding in merged
+        if "retry" in finding.finding.lower()
+    ]
+    idempotency_findings = [
+        finding
+        for finding in merged
+        if "idempotency" in finding.finding.lower()
+    ]
+
+    assert len(retry_findings) == 1
+    assert len(idempotency_findings) == 1
+    assert retry_findings[0].severity == "medium"
+    assert retry_findings[0].evidence
+    assert retry_findings[0].recommendation
+
+    
+    
 @pytest.mark.asyncio
 async def test_review_merges_findings_and_does_not_approve_high_risk():
     response = make_architecture_response()

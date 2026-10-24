@@ -1,6 +1,7 @@
 
 import json
 import logging
+import re
 from typing import Any, cast
 
 from pydantic import ValidationError
@@ -11,7 +12,12 @@ from app.api.schemas import (
     ArchitectureReview,
 )
 
-from app.services.architecture_review_checks import (run_deterministic_architecture_checks)
+from app.services.architecture_review_checks import (
+    has_explicit_result_persistence,
+    has_explicit_result_authentication,
+    is_known_api_endpoint_or_component_alias,
+    run_deterministic_architecture_checks,
+)
 from app.services.model_client import create_model_client
 from app.services.review_finding_merge import merge_review_findings
 
@@ -49,7 +55,60 @@ Rules:
     input explicitly describes storing those results.
 14. Do not treat encryption alone as proof of tenant isolation.
 15. Return one finding per distinct underlying issue.
+16. A diagram node that is an HTTP operation, such as GET /jobs/{jobId}/results,
+    does not need to be a separately declared architecture component. Check
+    whether it is an API endpoint before reporting a component mismatch.
+17. Treat common names such as "Auth Provider" and "Authentication Provider"
+    as equivalent when they clearly refer to the same component.
+18. If a named Results Store component explicitly states that it persists or
+    stores processed results, do not report that result persistence is missing.
+    You may separately report a genuinely unspecified retention or access policy.
+19. Check the complete components, responsibilities, rationale, and data flow
+    before concluding that an architecture capability is absent.
 """
+
+
+def _filter_findings_contradicted_by_architecture(response: ArchitectureResponse, findings: list[Any]) -> list[Any]:
+    """Remove narrow false positives contradicted by explicit design evidence.
+
+    This is intentionally conservative: it only removes known mismatch claims
+    when the response itself supplies direct evidence that the claim is false.
+    It does not suppress unrelated security or reliability findings.
+    """
+    filtered: list[Any] = []
+
+    for finding in findings:
+        title = str(getattr(finding, "finding", ""))
+        category = str(getattr(finding, "category", ""))
+        title_lower = title.lower()
+
+        if (category == "data_flow" and "persistent storage" in title_lower and has_explicit_result_persistence(response)):
+            logger.debug(
+                "event=architecture_review_false_positive_filtered "
+                "reason=explicit_result_store"
+            )
+            continue
+
+        if category == "consistency" and ("diagram node" in title_lower or "matching architecture component" in title_lower):
+            match = re.search(r"diagram node ['\"](.+?)['\"]", title, re.IGNORECASE)
+            if match and is_known_api_endpoint_or_component_alias(response, match.group(1)):
+                logger.debug(
+                    "event=architecture_review_false_positive_filtered "
+                    "reason=endpoint_or_component_alias"
+                )
+                continue
+        
+        if (category == "security" and "authentication design for result retrieval is unresolved" 
+            in title_lower and has_explicit_result_authentication(response)):
+            logger.debug(
+                "event=architecture_review_false_positive_filtered "
+                "reason=explicit_result_authentication"
+            )
+            continue
+
+        filtered.append(finding)
+
+    return filtered
 
 
 class ArchitectureReviewAgent:
@@ -140,13 +199,13 @@ class ArchitectureReviewAgent:
         merged = merge_review_findings(
             [*review.findings, *deterministic_findings]
         )
-        
+        merged = _filter_findings_contradicted_by_architecture(
+            response, merged
+        )
+
         recommendation = review.approval_recommendation
 
-        # A deterministic high/critical finding must not be overridden
-        # by an LLM approval.
-                # Deterministic high/critical findings must not be overridden
-        # by an LLM approval.
+        # A high/critical finding must not be overridden by an LLM approval.
         if any(
             finding.severity in ("critical", "high")
             for finding in merged

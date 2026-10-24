@@ -3,7 +3,7 @@ import re
 
 
 NODE_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
-EDGE_PATTERN = re.compile(r"-->")
+EDGE_PATTERN = re.compile(r"-\.->|-->")
 
 
 def validate_mermaid_flowchart(diagram: str) -> list[str]:
@@ -24,14 +24,34 @@ def validate_mermaid_flowchart(diagram: str) -> list[str]:
 
     declared_nodes: set[str] = set()
     referenced_nodes: set[str] = set()
+    seen_edges: set[str] = set()
+    edge_count = 0
 
-    for line in lines[1:]:
+    for line_number, line in enumerate(lines[1:], start=2):
         stripped = line.strip()
 
         if not stripped or stripped.startswith("%%"):
             continue
 
+        if stripped.lower().startswith("style "):
+            errors.append(
+                f"Style directives are not supported in this restricted diagram format (line {line_number})."
+            )
+            continue
+
+        if re.search(r"-->>|->>|==>|<--|<->|--x|--o", stripped):
+            errors.append(
+                f"Unsupported arrow syntax on line {line_number}; use --> only."
+            )
+            continue
+
         if EDGE_PATTERN.search(stripped):
+            edge_count += 1
+            normalized_edge = stripped
+            if normalized_edge in seen_edges:
+                errors.append(f"Duplicate edge declaration on line {line_number}.")
+            seen_edges.add(normalized_edge)
+
             # Split each simple edge into its source and target.
             parts = EDGE_PATTERN.split(stripped)
 
@@ -62,6 +82,11 @@ def validate_mermaid_flowchart(diagram: str) -> list[str]:
 
     if not referenced_nodes:
         errors.append("Diagram must contain at least one flowchart edge.")
+
+    if edge_count > 30:
+        errors.append(
+            f"Diagram contains {edge_count} edges; keep the diagram concise with no more than 30 edges."
+        )
 
     missing_nodes = referenced_nodes - declared_nodes
     if missing_nodes:

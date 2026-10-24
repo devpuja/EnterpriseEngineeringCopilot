@@ -40,8 +40,11 @@ def _issue_family(finding: ArchitectureReviewFinding) -> str | None:
         "async_retry": (
             "retry handling",
             "retry policy",
+            "retry policy details are underspecified",
             "retry behavior",
             "retries with backoff",
+            "retry limits and backoff strategies",
+            "retry limits or backoff strategies",
         ),
         "async_idempotency": (
             "idempotency",
@@ -121,28 +124,20 @@ def _merge_pair(
     left: ArchitectureReviewFinding,
     right: ArchitectureReviewFinding,
 ) -> ArchitectureReviewFinding:
-    # Keep the strongest severity.
-    severity = max(
-        (left.severity, right.severity),
-        key=lambda item: _SEVERITY_RANK[item],
-    )
+    """Merge duplicate findings without mixing unrelated evidence."""
+    left_rank = _SEVERITY_RANK[left.severity]
+    right_rank = _SEVERITY_RANK[right.severity]
 
-    # Prefer the more descriptive text as a simple, deterministic
-    # selection rule. This is a heuristic, not a measure of truth.
-    finding = max((left.finding, right.finding), key=len)
-    evidence = max((left.evidence, right.evidence), key=len)
-    recommendation = max(
-        (left.recommendation, right.recommendation),
-        key=len,
-    )
+    if right_rank > left_rank:
+        selected = right
+    elif left_rank > right_rank:
+        selected = left
+    else:
+        left_detail = len(left.evidence) + len(left.recommendation)
+        right_detail = len(right.evidence) + len(right.recommendation)
+        selected = right if right_detail > left_detail else left
 
-    return ArchitectureReviewFinding(
-        severity=severity,
-        category=left.category,
-        finding=finding,
-        evidence=evidence,
-        recommendation=recommendation,
-    )
+    return selected.model_copy()
 
 
 

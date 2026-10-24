@@ -52,14 +52,18 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
     except ValueError as exc:
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
+
         logger.warning(
             "event=architecture_generation_invalid_output "
-            "request_id=%s provider=%s duration_ms=%.2f error_type=%s",
+            "request_id=%s provider=%s duration_ms=%.2f "
+            "error_type=%s error=%s",
             request_id,
             provider,
             duration_ms,
             type(exc).__name__,
+            str(exc),
         )
+
 
         raise HTTPException(
             status_code=502,
