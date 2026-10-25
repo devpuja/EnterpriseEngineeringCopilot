@@ -175,7 +175,7 @@ RELIABILITY
 - Specify the maximum processing attempts and backoff strategy.
 - Explain how non-retryable errors are handled.
 - Define idempotency behavior when requests or messages are duplicated.
-- Define job states, including Queued, Processing, Completed, and Failed.
+- Define job states, including Queued, Processing, Retrying, Completed, and Failed.
 - Define how retry exhaustion leads to a terminal Failed state.
 - Explain how failed messages are handled through the dead-letter mechanism.
 

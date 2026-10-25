@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from app.agents.architecture_agent import ArchitectureAgent
+from app.agents.architecture_agent import ArchitectureAgent, ARCHITECTURE_INSTRUCTIONS
 from app.api.schemas import (
     ArchitectureComponent,
     ArchitectureDesign,
@@ -164,5 +164,38 @@ def test_design_rejects_invalid_schema() -> None:
                 requirements="Build a multi-tenant PDF processing platform",
                 model_provider="ollama",
             )
+
+    asyncio.run(scenario())
+
+
+def test_revision_prompt_requires_findings_to_be_fixed_in_design() -> None:
+    async def scenario() -> None:
+        from app.api.schemas import ArchitectureReview, ArchitectureReviewFinding
+
+        agent, fake_agent = create_test_agent(value=create_valid_response())
+        feedback = ArchitectureReview(
+            summary="Reliability controls are missing.",
+            findings=[
+                ArchitectureReviewFinding(
+                    severity="medium",
+                    category="reliability",
+                    finding="Retry policy details are underspecified.",
+                    evidence="The maximum attempt count is missing.",
+                    recommendation="Specify maximum attempts and backoff.",
+                )
+            ],
+            approval_recommendation="revise",
+        )
+
+        await agent.design(
+            requirements="Build a multi-tenant PDF processing platform",
+            model_provider="openai",
+            review_feedback=feedback,
+        )
+
+        assert "MANDATORY CONTROL EVIDENCE" in ARCHITECTURE_INSTRUCTIONS
+        assert "maximum processing attempts" in ARCHITECTURE_INSTRUCTIONS.lower()
+        assert "not only in risks or next_steps" in fake_agent.prompt
+        assert "Review findings:" in fake_agent.prompt
 
     asyncio.run(scenario())
