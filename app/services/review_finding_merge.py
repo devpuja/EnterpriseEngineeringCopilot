@@ -51,7 +51,9 @@ def _issue_family(finding: ArchitectureReviewFinding) -> str | None:
             "retries with backoff",
             "retry limits and backoff strategies",
             "retry limits or backoff strategies",
-            "bounded retries",
+            "error handling and retry mechanisms",
+            "undefined error handling and retry mechanisms",
+            "retry mechanisms are undefined",
         ),
         "async_idempotency": (
             "idempotency",

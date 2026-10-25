@@ -179,66 +179,109 @@ RELIABILITY
 - Define how retry exhaustion leads to a terminal Failed state.
 - Explain how failed messages are handled through the dead-letter mechanism.
 
-MANDATORY CONTROL EVIDENCE
-The following details must appear in the proposed design itself, in components,
-responsibilities, data_flow, or decisions. Mentioning a control only in risks,
-mitigations, or next_steps is not sufficient.
 
-TENANT AUTHORIZATION
-- For an Azure design without a specified identity provider, use Microsoft Entra ID
-  with OAuth 2.0/OIDC as a proposed default, and state that assumption.
-- Validate access tokens and derive tenant identity only from validated identity
-  claims; never trust a tenant ID supplied only by the client.
-- Authorize every job submission, status request, and result request against the
-  authenticated tenant and the requested job.
-- State that Cosmos DB partition keys and every status/job query are scoped to the
-  authenticated tenant. Explain the tenant/job authorization boundary.
-- Explain how Blob Storage access is authorized for the tenant and job, without
-  exposing unrestricted storage credentials or cross-tenant object references.
-- Include negative tests for cross-tenant status and result access.
+MANDATORY DESIGN DETAILS — DO NOT OMIT
 
-ASYNC PROCESSING, CAPACITY, AND RECOVERY
-- Show the API publishing a durable message and the worker consuming it from the
-  queue. Keep the queue, worker, status store, and result store distinct.
-- Explain how queue depth or oldest-message age is monitored and how worker
-  instances scale horizontally based on processing demand.
-- State how worker concurrency/backpressure protects downstream storage and compute.
-- Do not infer a single runtime worker from one logical worker component; describe
-  the deployment's scale-out and recovery behavior.
-- Define idempotency using a stable job/message identifier and a persisted state or
-  result check so redelivery does not duplicate externally visible side effects.
-- If requirements say bounded retries but provide no count, propose a numeric
-  default (for example, five total processing attempts), label it as an assumption,
-  and identify it for operational validation. Name the backoff strategy.
+The architecture must demonstrate the following controls in its
+components, data_flow, decisions, and Mermaid diagram.
+
+1. TENANT AUTHORIZATION
+- Identify the authentication mechanism and trusted source of tenant identity.
+- Describe authorization for job submission, status retrieval, and result retrieval.
+- Explain how Cosmos DB queries enforce tenant scope using the authenticated
+  tenant identifier.
+- Explain how Blob Storage access is authorized for the tenant and job.
+- Never trust a tenant ID supplied only by the client.
+- Include cross-tenant access-denial tests.
+
+2. ASYNCHRONOUS PROCESSING AND IDEMPOTENCY
+- Show the API submitting a message to Azure Service Bus and the worker
+  consuming that message.
+- Explain how duplicate message delivery is handled without duplicating
+  processing side effects.
+- Describe how upload spikes are buffered and how worker concurrency and
+  scaling are managed.
+- Keep the queue, worker, status store, and results store as distinct components.
+
+3. RETRIES AND TERMINAL FAILURES
+- Specify a proposed numeric maximum attempt count and a named backoff strategy.
 - Distinguish transient retryable errors from permanent non-retryable errors.
-- Describe dead-lettering after exhaustion, alerting/monitoring, inspection, and
-  safe replay. Persist the terminal Failed state and a safe error description.
+- Explain when messages are dead-lettered and how they can be inspected or
+  safely replayed.
+- Define job states, including Queued, Processing, Retrying, Completed, and Failed.
+- When retries are exhausted, persist Failed status and a safe error description.
 
-RESULT RETRIEVAL AND CONSISTENCY
-- Define GET /jobs/{jobId}/results (or an equivalent explicit endpoint), including
-  identity validation, tenant/job authorization, state checking, result-reference
-  lookup, and authorized result retrieval.
-- Define responses for Queued, Processing, Retrying, Completed, and Failed jobs.
+4. RESULT RETRIEVAL
+- Specify the endpoint, for example GET /jobs/{jobId}/results.
+- Authenticate the caller and authorize access to the job for the caller's tenant.
+- Check the job state before returning a result.
+- Explain how the result reference is retrieved and how access to Blob Storage
+  is restricted.
+- Define responses for queued/processing, completed, and failed jobs.
+
+5. COMPLIANCE AND OPEN QUESTIONS
+- Distinguish confirmed requirements from unresolved compliance questions.
+- State the baseline security and data-protection controls that can be designed
+  without assuming a particular regulatory framework.
+- Do not claim compliance with a framework unless it is specified and validated.
+
+6. CONSISTENCY
+- Keep component names consistent across components, decisions, data_flow,
+  and Mermaid.
+- Declare each Mermaid node once and use only declared nodes.
+- Do not substitute the status store for the message queue.
+- Address each review finding in the revised architecture itself, not only
+  in risks, mitigations, or next_steps.
+
+
+REQUIRED ARCHITECTURE ACCEPTANCE CHECKLIST
+
+The architecture output must explicitly demonstrate every applicable control below.
+Do not rely only on the risks, mitigations, or next_steps sections to prove
+that a control is part of the proposed design.
+
+1. TENANT ISOLATION
+- Derive tenant identity only from validated Microsoft Entra ID claims.
+- Authorize every job submission, status query, and result retrieval against
+  the authenticated tenant.
+- Explicitly describe tenant-scoped Cosmos DB partition keys and queries.
+- Explicitly describe how Blob Storage access is restricted to the authorized
+  tenant, such as server-side authorization or narrowly scoped access.
+- Include cross-tenant negative tests for status and result retrieval.
+
+2. SCALABILITY AND ASYNC PROCESSING
+- Include Azure Service Bus as the durable queue between the API and worker.
+- Explain how upload spikes are absorbed by the queue and how workers scale
+  independently based on queue depth or processing demand.
+- Describe concurrency limits, backpressure, and protection against exhausting
+  downstream storage or compute capacity.
+- Include the queue, worker, and relevant stores as distinct components.
+
+3. RETRIES AND TERMINAL FAILURE
+- Define a maximum of 5 processing attempts and exponential backoff as the
+  proposed baseline, subject to operational validation.
+- Distinguish retryable transient failures from non-retryable errors.
+- Make processing idempotent so message redelivery does not duplicate effects.
+- After retry exhaustion, persist the job's terminal Failed state and a safe
+  error description in the Processing Status Store.
+- Define dead-letter queue handling, alerting, inspection, and safe replay.
+
+4. RESULT PERSISTENCE AND AUTHORIZED RETRIEVAL
+- Preserve the Processing Results Store and Processing Status Store.
+- Explain how the worker writes completed results to Blob Storage.
+- Explain how the status store records the result reference and tenant/job
+  metadata.
+- For GET /jobs/{jobId}/results, validate identity, authorize the tenant,
+  check job state, retrieve the reference, and return only the authorized result.
+- Define behavior for queued, processing, completed, and failed jobs.
+
+5. CONSISTENCY
 - Keep component names and responsibilities consistent across components,
-  decisions, data_flow, and Mermaid. Do not mention a generic service in data_flow
-  unless it is represented by a declared component or clearly maps to one.
-- External actors such as User, Tenant / Client, and Browser may appear in Mermaid
-  without being listed as internal architecture components. Do not report them as
-  missing components. Every internal service or infrastructure node must be declared.
-- Do not add duplicate components merely to satisfy a naming mismatch.
-
-COMPLIANCE AND OPEN QUESTIONS
-- Keep unspecified regulatory frameworks as open questions. Do not claim compliance
-  with a framework that was not specified and validated.
-- State applicable baseline data-protection controls without inventing a regulation.
-
-REVISION RULE
-When review_feedback is supplied, address each actionable finding in the revised
-architecture itself. For each finding, make a concrete change to a component,
-responsibility, data_flow, decision, or diagram. Do not merely copy its wording into
-risks or next_steps. If a finding is already contradicted by explicit design evidence,
-retain the correct design and avoid adding redundant components. Preserve legitimate
-open questions and do not force an approval recommendation.
+  data_flow, decisions, and Mermaid.
+- Do not introduce undeclared components in the diagram.
+- Avoid duplicate nodes and redundant edges.
+- Ensure every material requirement is addressed in the architecture itself,
+  not only in a risk mitigation or future next step.
 
 """
 
@@ -292,17 +335,21 @@ class ArchitectureAgent:
 
         if review_feedback is not None:
             prompt += (
-                "\n\nARCHITECTURE REVISION REQUIRED\n"
-                "Review the previous architecture and address the findings below.\n"
-                "Preserve the original business requirements and constraints.\n"
-                "Fix each actionable finding with a concrete change in the design "
-                "itself (components, responsibilities, data_flow, decisions, or diagram), "
-                "not only in risks or next_steps. Preserve valid existing design evidence, "
-                "do not add redundant components to satisfy naming mismatches, and keep "
-                "unresolved regulatory requirements as open questions. Do not invent "
-                "requirements or claim approval.\n"
-                "Return the complete revised architecture, not a partial patch.\n\n"
-                "Review findings:\n"
+                "\n\nREVISION ACCEPTANCE CHECKLIST\n"
+                "Resolve every review finding with explicit design evidence. "
+                "Preserve components that already satisfy requirements. "
+                "Keep components, data_flow, decisions, and Mermaid consistent.\n"
+                "- Security: derive tenant ID from validated identity claims; "
+                "authorize every job/status/result operation; enforce tenant "
+                "boundaries in Cosmos DB queries and Blob Storage access.\n"
+                "- Reliability: specify maximum attempts, backoff strategy, "
+                "retryable and non-retryable errors, idempotency, dead-letter "
+                "handling, and the terminal Failed state after retry exhaustion.\n"
+                "- Results: preserve an existing persistent results store. "
+                "Describe worker writes, result references in status metadata, "
+                "authorized retrieval, and retention/access controls.\n"
+                "Do not claim a finding is resolved unless the architecture "
+                "explicitly demonstrates the corresponding control."
                 f"{review_feedback.model_dump_json(indent=2)}"
             )
 

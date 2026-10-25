@@ -846,7 +846,7 @@ def _describes_result_persistence(text: str) -> bool:
     return bool(
         re.search(
             r"\b(?:persist(?:s|ed|ently)?|store(?:s|d)?|"
-            r"save(?:s|d)?|write(?:s|n)?)\b"
+            r"save(?:s|d)?|write(?:s|n)?|hold(?:s|ing)?|keep(?:s|ing)?)\b"
             r"[^.!?]{0,120}\bresults?\b",
             normalized,
         )
