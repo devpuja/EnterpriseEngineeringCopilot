@@ -21,7 +21,6 @@ Follow-up: Verify compatibility with the chosen current MAF version before addin
 
 
 Phase 2 — MAF Multi-Agent Architecture
-Current priority
 Modernize the agent workflow using MAF's supported workflow APIs, typed data handoffs, independent review, controlled revision, workflow events, and failure handling.
 - Requirements Analysis Agent
 - Architecture Design Agent
