@@ -58,12 +58,15 @@ Rules:
 16. A diagram node that is an HTTP operation, such as GET /jobs/{jobId}/results,
     does not need to be a separately declared architecture component. Check
     whether it is an API endpoint before reporting a component mismatch.
-17. Treat common names such as "Auth Provider" and "Authentication Provider"
+17. External actors such as User, Tenant / Client, Customer, Browser, and API
+    Consumer are not internal architecture components and must not be reported
+    as missing components merely because they are absent from architecture.components.
+18. Treat common names such as "Auth Provider" and "Authentication Provider"
     as equivalent when they clearly refer to the same component.
-18. If a named Results Store component explicitly states that it persists or
+19. If a named Results Store component explicitly states that it persists or
     stores processed results, do not report that result persistence is missing.
     You may separately report a genuinely unspecified retention or access policy.
-19. Check the complete components, responsibilities, rationale, and data flow
+20. Check the complete components, responsibilities, rationale, and data flow
     before concluding that an architecture capability is absent.
 """
 
