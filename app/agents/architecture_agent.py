@@ -175,9 +175,70 @@ RELIABILITY
 - Specify the maximum processing attempts and backoff strategy.
 - Explain how non-retryable errors are handled.
 - Define idempotency behavior when requests or messages are duplicated.
-- Define job states, including Queued, Processing, Completed, and Failed.
+- Define job states, including Queued, Processing, Retrying, Completed, and Failed.
 - Define how retry exhaustion leads to a terminal Failed state.
 - Explain how failed messages are handled through the dead-letter mechanism.
+
+MANDATORY CONTROL EVIDENCE
+The following details must appear in the proposed design itself, in components,
+responsibilities, data_flow, or decisions. Mentioning a control only in risks,
+mitigations, or next_steps is not sufficient.
+
+TENANT AUTHORIZATION
+- For an Azure design without a specified identity provider, use Microsoft Entra ID
+  with OAuth 2.0/OIDC as a proposed default, and state that assumption.
+- Validate access tokens and derive tenant identity only from validated identity
+  claims; never trust a tenant ID supplied only by the client.
+- Authorize every job submission, status request, and result request against the
+  authenticated tenant and the requested job.
+- State that Cosmos DB partition keys and every status/job query are scoped to the
+  authenticated tenant. Explain the tenant/job authorization boundary.
+- Explain how Blob Storage access is authorized for the tenant and job, without
+  exposing unrestricted storage credentials or cross-tenant object references.
+- Include negative tests for cross-tenant status and result access.
+
+ASYNC PROCESSING, CAPACITY, AND RECOVERY
+- Show the API publishing a durable message and the worker consuming it from the
+  queue. Keep the queue, worker, status store, and result store distinct.
+- Explain how queue depth or oldest-message age is monitored and how worker
+  instances scale horizontally based on processing demand.
+- State how worker concurrency/backpressure protects downstream storage and compute.
+- Do not infer a single runtime worker from one logical worker component; describe
+  the deployment's scale-out and recovery behavior.
+- Define idempotency using a stable job/message identifier and a persisted state or
+  result check so redelivery does not duplicate externally visible side effects.
+- If requirements say bounded retries but provide no count, propose a numeric
+  default (for example, five total processing attempts), label it as an assumption,
+  and identify it for operational validation. Name the backoff strategy.
+- Distinguish transient retryable errors from permanent non-retryable errors.
+- Describe dead-lettering after exhaustion, alerting/monitoring, inspection, and
+  safe replay. Persist the terminal Failed state and a safe error description.
+
+RESULT RETRIEVAL AND CONSISTENCY
+- Define GET /jobs/{jobId}/results (or an equivalent explicit endpoint), including
+  identity validation, tenant/job authorization, state checking, result-reference
+  lookup, and authorized result retrieval.
+- Define responses for Queued, Processing, Retrying, Completed, and Failed jobs.
+- Keep component names and responsibilities consistent across components,
+  decisions, data_flow, and Mermaid. Do not mention a generic service in data_flow
+  unless it is represented by a declared component or clearly maps to one.
+- External actors such as User, Tenant / Client, and Browser may appear in Mermaid
+  without being listed as internal architecture components. Do not report them as
+  missing components. Every internal service or infrastructure node must be declared.
+- Do not add duplicate components merely to satisfy a naming mismatch.
+
+COMPLIANCE AND OPEN QUESTIONS
+- Keep unspecified regulatory frameworks as open questions. Do not claim compliance
+  with a framework that was not specified and validated.
+- State applicable baseline data-protection controls without inventing a regulation.
+
+REVISION RULE
+When review_feedback is supplied, address each actionable finding in the revised
+architecture itself. For each finding, make a concrete change to a component,
+responsibility, data_flow, decision, or diagram. Do not merely copy its wording into
+risks or next_steps. If a finding is already contradicted by explicit design evidence,
+retain the correct design and avoid adding redundant components. Preserve legitimate
+open questions and do not force an approval recommendation.
 
 """
 
@@ -234,8 +295,12 @@ class ArchitectureAgent:
                 "\n\nARCHITECTURE REVISION REQUIRED\n"
                 "Review the previous architecture and address the findings below.\n"
                 "Preserve the original business requirements and constraints.\n"
-                "Fix the identified issues without introducing unsupported "
-                "requirements or unnecessary components.\n"
+                "Fix each actionable finding with a concrete change in the design "
+                "itself (components, responsibilities, data_flow, decisions, or diagram), "
+                "not only in risks or next_steps. Preserve valid existing design evidence, "
+                "do not add redundant components to satisfy naming mismatches, and keep "
+                "unresolved regulatory requirements as open questions. Do not invent "
+                "requirements or claim approval.\n"
                 "Return the complete revised architecture, not a partial patch.\n\n"
                 "Review findings:\n"
                 f"{review_feedback.model_dump_json(indent=2)}"
