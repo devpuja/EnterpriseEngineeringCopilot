@@ -64,6 +64,7 @@ class FakeArchitectureAgent:
         requirements: str,
         model_provider: str,
         requirements_analysis: RequirementAnalysis | None = None,
+        previous_response: ArchitectureResponse | None = None,
     ) -> ArchitectureResponse:
         self.received_requirements = requirements
         self.received_provider = model_provider

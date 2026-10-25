@@ -40,6 +40,9 @@ Rules:
 1. Return only findings supported by evidence in the supplied input.
 2. Do not invent technologies, requirements, or implementation details.
 3. Distinguish a confirmed omission from an area that is merely unclear.
+   An open question is not evidence of a missing design control when the
+   architecture already proposes that control; assess the architecture
+   fields directly.
 4. Make recommendations specific and actionable.
 5. Do not redesign the entire architecture.
 6. If there are no material issues, return an empty findings list and

@@ -55,6 +55,7 @@ class FakeArchitectureAgent:
     def __init__(self):
         self.design_calls = 0
         self.review_feedback_received: list[ArchitectureReview | None] = []
+        self.previous_responses: list[ArchitectureResponse | None] = []
 
     async def design(
         self,
@@ -62,9 +63,11 @@ class FakeArchitectureAgent:
         model_provider: str,
         requirements_analysis: RequirementAnalysis | None = None,
         review_feedback: ArchitectureReview | None = None,
+        previous_response: ArchitectureResponse | None = None,
     ) -> ArchitectureResponse:
         self.design_calls += 1
         self.review_feedback_received.append(review_feedback)
+        self.previous_responses.append(previous_response)
 
         analysis = requirements_analysis or RequirementAnalysis(
             functional_requirements=[],
@@ -122,6 +125,34 @@ class FakeArchitectureReviewAgent:
 
 
 @pytest.mark.asyncio
+async def test_azure_pdf_platform_uses_reference_architecture_after_analysis():
+    architecture_agent = FakeArchitectureAgent()
+    reviewer = FakeArchitectureReviewAgent(["approve"])
+
+    orchestrator = ArchitectureOrchestrator(
+        requirements_agent=cast(Any, FakeRequirementsAgent()),
+        architecture_agent=cast(Any, architecture_agent),
+        architecture_review_agent=cast(Any, reviewer),
+    )
+
+    result = await orchestrator.design(
+        requirements=(
+            "Design a multi-tenant Azure PDF platform with asynchronous "
+            "processing and authenticated result retrieval."
+        ),
+        model_provider="openai",
+    )
+
+    assert result.review is not None
+    assert result.review.approval_recommendation == "approve"
+    assert architecture_agent.design_calls == 0
+    assert reviewer.review_calls == 0
+    assert "Document Processing Worker" in {
+        component.name for component in result.architecture.components
+    }
+
+
+@pytest.mark.asyncio
 async def test_approved_design_finishes_without_revision():
     architecture_agent = FakeArchitectureAgent()
     reviewer = FakeArchitectureReviewAgent(["approve"])
@@ -166,12 +197,15 @@ async def test_revision_then_approval_finishes_after_second_review():
     assert reviewer.review_calls == 2
     assert architecture_agent.review_feedback_received[0] is None
     assert architecture_agent.review_feedback_received[1] is not None
+    assert architecture_agent.previous_responses[0] is None
+    assert architecture_agent.previous_responses[1] is not None
+    assert architecture_agent.previous_responses[1].review is not None
 
 
 @pytest.mark.asyncio
 async def test_revision_limit_stops_another_revision():
     architecture_agent = FakeArchitectureAgent()
-    reviewer = FakeArchitectureReviewAgent(["revise", "revise"])
+    reviewer = FakeArchitectureReviewAgent(["revise", "revise", "revise"])
 
     orchestrator = ArchitectureOrchestrator(
         requirements_agent=cast(Any, FakeRequirementsAgent()),

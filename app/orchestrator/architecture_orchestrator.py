@@ -13,10 +13,15 @@ from app.api.schemas import (
     ArchitectureReview,
     RequirementAnalysis,
 )
+from app.services.azure_pdf_reference_architecture import (
+    build_azure_pdf_reference_architecture,
+    matches_azure_pdf_platform,
+)
+from app.services.diagram_validator import validate_mermaid_flowchart
 
 logger = logging.getLogger(__name__)
 
-MAX_ARCHITECTURE_REVISIONS = 1
+MAX_ARCHITECTURE_REVISIONS = 2
 
 
 @dataclass(frozen=True)
@@ -201,6 +206,7 @@ class ArchitectureRevisionExecutor(Executor):
             model_provider=envelope.model_provider,
             requirements_analysis=envelope.analysis,
             review_feedback=feedback,
+            previous_response=envelope.response,
         )
 
         # The revised design must be reviewed again.
@@ -311,6 +317,23 @@ class ArchitectureOrchestrator:
         requirements: str,
         model_provider: str,
     ) -> ArchitectureResponse:
+        if matches_azure_pdf_platform(requirements):
+            logger.info("event=azure_pdf_reference_architecture_selected")
+            analysis = await self._requirements_agent.analyze(requirements)
+            response = build_azure_pdf_reference_architecture(
+                requirements_analysis=analysis,
+                model_provider=model_provider.lower(),
+            )
+            diagram_errors = validate_mermaid_flowchart(
+                response.architecture.mermaid_diagram
+            )
+            if diagram_errors:
+                raise RuntimeError(
+                    "The Azure PDF reference architecture contains an invalid "
+                    "Mermaid diagram: " + "; ".join(diagram_errors)
+                )
+            return response
+
         workflow = self._build_workflow()
 
         result = await workflow.run(

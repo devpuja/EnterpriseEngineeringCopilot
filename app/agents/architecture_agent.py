@@ -101,6 +101,13 @@ For multi-tenant systems, explicitly describe:
 - How cross-tenant access is prevented and tested.
 
 For the Azure PDF-processing platform:
+- Include Azure API Management as the API gateway and a .NET REST
+  Application API when the requirements specify Azure and .NET is not
+  constrained otherwise.
+- Include Microsoft Entra ID for identity and Azure Monitor with
+  Application Insights for operational monitoring.
+- Describe Entra ID token validation, trusted-claim tenant derivation,
+  and per-operation authorization as separate controls.
 - Explain tenant-scoped Cosmos DB partitioning and query enforcement.
 - Explain how Blob Storage access is restricted to the authorized tenant
   and job, using server-side authorization or appropriately scoped access.
@@ -126,6 +133,7 @@ For the Azure PDF-processing platform:
 - Define concurrency limits, backpressure, and protection against
   exhausting downstream compute or storage capacity.
 - Describe queue-depth or oldest-message-age monitoring and alerting.
+- Explicitly cover worker scale-out, bounded concurrency, and backpressure.
 
 Do not rely solely on component descriptions, risks, or next_steps
 to demonstrate scalability controls. Put the proposed operating
@@ -184,6 +192,8 @@ Define GET /jobs/{jobId}/results and its complete retrieval path:
    safe error description.
 9. Ensure unauthorized callers cannot retrieve another tenant's
    job metadata, result reference, or result content.
+10. State the endpoint behavior separately for Queued, Processing,
+    Completed, and Failed jobs; do not leave this as an implication.
 
 Explain result access controls and any relevant retention assumptions
 without inventing retention requirements.
@@ -201,6 +211,11 @@ Identify material risks and provide actionable mitigations.
 Keep decisions and next_steps consistent with the architecture.
 Do not use an unresolved question alone as proof that the proposed
 design is deficient.
+Include meaningful decisions for the API and identity boundary, tenant
+data partitioning, asynchronous messaging and worker scaling, result
+retrieval, and monitoring when these choices apply. A decision must
+describe actual alternatives and trade-offs, not merely restate a
+component choice.
 
 8. MERMAID DIAGRAM
 
@@ -341,7 +356,9 @@ class ArchitectureAgent:
         requirements: str,
         model_provider: str,
         requirements_analysis: RequirementAnalysis | None = None,
-        review_feedback: ArchitectureReview | None = None) -> ArchitectureResponse:
+        review_feedback: ArchitectureReview | None = None,
+        previous_response: ArchitectureResponse | None = None,
+    ) -> ArchitectureResponse:
         
         analysis_context = ""
 
@@ -369,12 +386,27 @@ class ArchitectureAgent:
         
         
         if review_feedback is not None:
+            previous_design_context = ""
+            if previous_response is not None:
+                previous_design_context = (
+                    "\n\nPREVIOUS ARCHITECTURE RESPONSE TO REVISE:\n"
+                    f"{previous_response.model_dump_json(indent=2)}\n"
+                    "Preserve correct components and decisions from this "
+                    "response; update only what is needed to address the "
+                    "findings and meet the requirements.\n"
+                )
+
             prompt += (
                 "\n\nARCHITECTURE REVISION — FINDING-BY-FINDING\n"
-                "Resolve each review finding in the architecture itself. "
+                "Revise the previous architecture rather than starting "
+                "without its context. Resolve each genuine review finding "
+                "with explicit evidence in the architecture itself. "
                 "Preserve valid existing decisions and components. "
                 "Do not claim a finding is resolved unless the revised design "
-                "contains explicit supporting evidence.\n\n"
+                "contains explicit supporting evidence. Treat open questions "
+                "as unresolved requirements, not as evidence that an explicit "
+                "proposed control is missing.\n"
+                f"{previous_design_context}\n"
 
                 "SECURITY:\n"
                 "- Validate Microsoft Entra ID access tokens at the defined "

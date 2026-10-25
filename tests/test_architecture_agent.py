@@ -189,11 +189,14 @@ def test_revision_prompt_requires_findings_to_be_fixed_in_design() -> None:
             requirements="Build a multi-tenant PDF processing platform",
             model_provider="openai",
             review_feedback=feedback,
+            previous_response=create_valid_response(),
         )
 
         assert "FINAL ARCHITECTURE ACCEPTANCE CHECK" in ARCHITECTURE_INSTRUCTIONS
         assert "maximum processing attempts" in ARCHITECTURE_INSTRUCTIONS.lower()
         assert "ARCHITECTURE REVISION — FINDING-BY-FINDING" in fake_agent.prompt
+        assert "PREVIOUS ARCHITECTURE RESPONSE TO REVISE" in fake_agent.prompt
+        assert "Asynchronous PDF processing" in fake_agent.prompt
         assert "Retry policy details are underspecified." in fake_agent.prompt
 
     asyncio.run(scenario())
