@@ -20,10 +20,19 @@ _EXTERNAL_ACTOR_LABELS = {
     "user",
     "client",
     "customer",
+    "tenant client",
+    "tenant user",
+    "tenant customer",
+    "end user",
+    "end customer",
+    "external client",
+    "external user",
+    "external system",
+    "api consumer",
+    "caller",
     "browser",
     "mobile app",
     "web app",
-    "external system",
 }
 
 
@@ -101,7 +110,7 @@ def _requirements_text(response: ArchitectureResponse) -> str:
     ).lower()
 
 
-def _tenant_implementation_text(response: ArchitectureResponse) -> str:
+def _architecture_implementation_text(response: ArchitectureResponse) -> str:
     """Return implemented design details, excluding aspirational risk mitigations."""
     architecture = response.architecture
     parts = [architecture.summary, architecture.mermaid_diagram, *architecture.data_flow]
@@ -363,6 +372,115 @@ def _authentication_findings(
     ]
 
 
+def _async_capacity_findings(
+    requirements: str,
+    implementation_text: str,
+) -> list[ArchitectureReviewFinding]:
+    """Check that stated scale/concurrency requirements have design evidence."""
+    async_required = _contains_any(
+        requirements,
+        (
+            "asynchronous",
+            "async processing",
+            "background processing",
+            "long-running job",
+            "long running job",
+        ),
+    )
+    scale_required = _contains_any(
+        requirements,
+        (
+            "concurrent",
+            "10,000",
+            "10000",
+            "high availability",
+            "high-load",
+            "high load",
+            "scalability",
+            "scale-out",
+            "scale out",
+            "performance",
+        ),
+    )
+
+    if not async_required or not scale_required:
+        return []
+
+    has_backlog_observability = _contains_any(
+        implementation_text,
+        (
+            "queue depth",
+            "queue length",
+            "oldest message age",
+            "oldest-message age",
+            "queue backlog",
+            "queue lag",
+            "monitor the queue",
+            "monitoring queue",
+        ),
+    )
+    has_worker_scale_strategy = _contains_any(
+        implementation_text,
+        (
+            "autoscal",
+            "auto-scal",
+            "scale horizontally",
+            "horizontal scaling",
+            "scale out",
+            "scale-out",
+            "scales based on demand",
+            "scales based on queue",
+            "worker instances",
+            "multiple worker instances",
+            "dynamic scaling",
+        ),
+    )
+    has_concurrency_protection = _contains_any(
+        implementation_text,
+        (
+            "backpressure",
+            "concurrency limit",
+            "concurrency limits",
+            "bounded concurrency",
+            "maximum concurrent",
+            "max concurrent",
+            "throttling",
+            "throttle",
+        ),
+    )
+
+    missing: list[str] = []
+    if not has_backlog_observability:
+        missing.append("queue backlog/age monitoring")
+    if not has_worker_scale_strategy:
+        missing.append("a worker scale-out strategy")
+    if not has_concurrency_protection:
+        missing.append("concurrency limits or backpressure")
+
+    if not missing:
+        return []
+
+    return [
+        ArchitectureReviewFinding(
+            severity="medium",
+            category="scalability",
+            finding="Queue backlog and worker scaling strategy is underspecified.",
+            evidence=(
+                "The requirements include asynchronous processing and scale/concurrency "
+                "needs, but the design does not explicitly demonstrate "
+                + ", ".join(missing)
+                + "."
+            ),
+            recommendation=(
+                "Describe queue-depth or oldest-message-age monitoring, a worker "
+                "scale-out strategy, and concurrency limits/backpressure in the "
+                "proposed design. Keep any numeric thresholds as proposed defaults "
+                "until validated against workload and service limits."
+            ),
+        )
+    ]
+
+
 def _async_reliability_findings(
     requirements: str,
     architecture_text: str,
@@ -595,8 +713,8 @@ def has_explicit_result_persistence(response: ArchitectureResponse) -> bool:
 def is_known_api_endpoint_or_component_alias(
     response: ArchitectureResponse, label: str
 ) -> bool:
-    """Identify diagram labels that are endpoints or known component-name aliases."""
-    if _is_api_endpoint_label(label):
+    """Identify diagram labels that need not be standalone components."""
+    if _is_api_endpoint_label(label) or _normalize_label(label) in _EXTERNAL_ACTOR_LABELS:
         return True
     normalized = _canonical_component_label(label)
     return any(
@@ -710,11 +828,13 @@ def run_deterministic_architecture_checks(response: ArchitectureResponse) -> lis
     findings.extend(
         _tenant_isolation_findings(
             requirements,
-            _tenant_implementation_text(response),
+            _architecture_implementation_text(response),
         )
     )
     findings.extend(_authentication_findings(response, architecture_text))
+    implementation_text = _architecture_implementation_text(response)
     findings.extend(_async_reliability_findings(requirements, architecture_text))
+    findings.extend(_async_capacity_findings(requirements, implementation_text))
     findings.extend(_result_retrieval_findings(response))
 
     return findings
