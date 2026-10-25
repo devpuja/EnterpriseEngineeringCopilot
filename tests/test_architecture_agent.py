@@ -12,8 +12,6 @@ from app.api.schemas import (
     ArchitectureResponse,
     RequirementAnalysis,
 )
-
-
 class FakeAgent:
     """Simulates the MAF Agent without calling a real model."""
 
@@ -193,9 +191,9 @@ def test_revision_prompt_requires_findings_to_be_fixed_in_design() -> None:
             review_feedback=feedback,
         )
 
-        assert "MANDATORY CONTROL EVIDENCE" in ARCHITECTURE_INSTRUCTIONS
+        assert "FINAL ARCHITECTURE ACCEPTANCE CHECK" in ARCHITECTURE_INSTRUCTIONS
         assert "maximum processing attempts" in ARCHITECTURE_INSTRUCTIONS.lower()
-        assert "not only in risks or next_steps" in fake_agent.prompt
-        assert "Review findings:" in fake_agent.prompt
+        assert "ARCHITECTURE REVISION — FINDING-BY-FINDING" in fake_agent.prompt
+        assert "Retry policy details are underspecified." in fake_agent.prompt
 
     asyncio.run(scenario())

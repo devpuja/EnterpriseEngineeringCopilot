@@ -19,6 +19,7 @@ _NODE_DECLARATION = re.compile(
 _EXTERNAL_ACTOR_LABELS = {
     "user",
     "client",
+    "client user",
     "customer",
     "tenant client",
     "tenant user",
