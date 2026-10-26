@@ -5,8 +5,18 @@ python-dotenv
 pytest-asyncio
 
 agent-framework
-agent-framework-ollama
 agent-framework-openai
+agent-framework-foundry
 
 pytest
 httpx
+
+
+# Phase 3.1 — RAG and Azure integration
+pypdf>=5.0.0
+python-multipart>=0.0.9
+openai>=1.55.0
+azure-search-documents>=11.6.0
+azure-identity>=1.17.0
+azure-storage-blob>=12.22.0
+msal

@@ -1,6 +1,65 @@
 # EnterpriseEngineeringCopilot
 AI assistant for software architects, senior developers, and engineering teams.
 
+## Model configuration
+
+Set `APP_NAME`, `APP_ENV`, `LOG_LEVEL`, and `MODEL_PROVIDER` in `.env`.
+Only the selected chat provider's configuration is required when creating a model client:
+
+| `MODEL_PROVIDER` | Required settings |
+| --- | --- |
+| `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| `azure_openai` | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_CHAT_DEPLOYMENT` |
+| `foundry` | `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_MODEL` |
+
+Provider names are case-insensitive. Settings for inactive providers can be omitted;
+for example, Foundry does not require OpenAI configuration.
+Azure OpenAI uses `DefaultAzureCredential` when `AZURE_OPENAI_API_KEY` is omitted.
+Foundry uses the Azure CLI identity (`az login`). Embeddings additionally require
+`FOUNDRY_EMBEDDING_MODEL`.
+
+`RAG_BACKEND` is exposed as `settings.rag_backend` and defaults to `memory`.
+Backend selection and tenant checks both use this setting, loaded at startup
+from `.env` with process environment variables taking precedence. Restart the
+application after changing it. Supported values are `memory` and `azure`.
+
+RAG adapters use the same settings object for search, storage, embeddings, and
+chunking. Environment variable names map to lowercase attributes, for example
+`AZURE_SEARCH_ENDPOINT` becomes `settings.azure_search_endpoint`.
+
+| Environment setting | Default / requirement |
+| --- | --- |
+| `AZURE_SEARCH_ENDPOINT` | Required for Azure search |
+| `AZURE_SEARCH_INDEX_NAME` | `engineering-knowledge-v2` |
+| `AZURE_SEARCH_API_KEY` | Optional; otherwise uses `DefaultAzureCredential` |
+| `AZURE_STORAGE_ACCOUNT_URL` | Required unless a connection string is provided |
+| `AZURE_STORAGE_CONTAINER` | `engineering-documents` |
+| `AZURE_STORAGE_CONNECTION_STRING` | Optional alternative to identity authentication |
+| `RAG_EMBEDDING_DIMENSIONS` | `1536`; must match embedding vectors and the search index |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | `1200` / `150` for the Azure backend |
+
+The legacy Azure OpenAI embedding adapter additionally uses
+`AZURE_OPENAI_EMBEDDING_DEPLOYMENT`. Azure-specific values can remain unset
+when using the memory backend; required-value checks run when creating the
+corresponding adapter.
+
+RAG API unit tests explicitly select the `memory` backend and use fake services,
+independent of local `RAG_BACKEND` configuration. Azure-mode tests verify that
+requests without trusted tenant context are rejected. In the application,
+`RAG_BACKEND=azure` requires middleware-provided tenant context; sending
+`X-Tenant-ID` alone is not sufficient.
+
+Entra middleware reads the shared settings loaded from `.env`:
+`ENTRA_TENANT_ID` is the directory tenant ID, `ENTRA_API_CLIENT_ID` is the API
+app registration's client ID (the expected v2 token audience), and
+`ENTRA_REQUIRED_SCOPE` defaults to `access_as_user`.
+Azure RAG requests need a bearer access token with the required delegated scope.
+Missing authentication configuration returns 503 and logs a configuration error;
+missing or invalid tokens return 401, and missing scope returns 403.
+Memory-mode RAG and public health routes do not require Entra configuration.
+Restart the application after changing these values. No client secret is needed
+by this middleware to validate incoming tokens.
+
 Enterprise Software Architecture & Engineering Copilot
 │
 ├── Architecture

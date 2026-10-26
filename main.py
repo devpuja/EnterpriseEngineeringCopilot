@@ -1,11 +1,12 @@
-
 import logging
 
 from fastapi import FastAPI
+from fastapi.security import HTTPBearer
 
+from app.middleware.entra_auth import EntraAuthMiddleware
 from app.api.architecture import router as architecture_router
+from app.api.rag import router as rag_router
 from app.config.settings import settings
-
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -13,16 +14,21 @@ logging.basicConfig(
     force=True,
 )
 
-app = FastAPI(
-    title=settings.app_name,
-    version="0.2.0",
-    description=(
-        "An agentic AI copilot for software architecture "
-        "analysis and decision support."
-    ),
+bearer_scheme = HTTPBearer(
+    bearerFormat="JWT",
+    scheme_name="BearerAuth",
 )
 
+app = FastAPI(
+    title=settings.app_name,
+    version="0.3.0",
+    description="An agentic AI copilot for software architecture analysis and decision support.",
+)
+
+
 app.include_router(architecture_router)
+app.include_router(rag_router)
+app.add_middleware(EntraAuthMiddleware)
 
 
 @app.get("/health")
@@ -36,7 +42,4 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Enterprise Engineering Copilot API",
-        "docs": "/docs",
-    }
+    return {"message": "Enterprise Engineering Copilot API", "docs": "/docs"}

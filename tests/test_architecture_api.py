@@ -21,7 +21,7 @@ client = TestClient(app)
 def valid_architecture_response() -> ArchitectureResponse:
     return ArchitectureResponse(
         agent="ArchitectureAgent",
-        model_provider="ollama",
+        model_provider="foundry",
         requirements_analysis=RequirementAnalysis(
             functional_requirements=["Upload PDF files"],
             non_functional_requirements=["Tenant isolation"],

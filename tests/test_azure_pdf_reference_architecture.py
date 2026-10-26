@@ -101,7 +101,7 @@ def test_reference_analysis_does_not_add_compliance_or_capacity_targets():
                 "What service-level objective is required for processing?",
             ],
         ),
-        model_provider="ollama",
+        model_provider="foundry",
     )
 
     analysis_text = " ".join(

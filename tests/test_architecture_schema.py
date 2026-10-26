@@ -19,7 +19,7 @@ def test_architecture_request_rejects_short_requirements():
 def test_architecture_response_accepts_valid_data():
     response = ArchitectureResponse(
         agent="ArchitectureAgent",
-        model_provider="ollama",
+        model_provider="foundry",
         requirements_analysis=RequirementAnalysis(
             functional_requirements=["Upload PDFs"],
             non_functional_requirements=["Tenant isolation"],
@@ -57,6 +57,6 @@ def test_architecture_response_rejects_missing_required_fields():
         ArchitectureResponse.model_validate(
             {
                 "agent": "ArchitectureAgent",
-                "model_provider": "ollama",
+                "model_provider": "foundry",
             }
         )
