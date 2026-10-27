@@ -21,7 +21,7 @@ client = TestClient(app)
 def valid_architecture_response() -> ArchitectureResponse:
     return ArchitectureResponse(
         agent="ArchitectureAgent",
-        model_provider="foundry",
+        model_provider="openai",
         requirements_analysis=RequirementAnalysis(
             functional_requirements=["Upload PDF files"],
             non_functional_requirements=["Tenant isolation"],
@@ -180,3 +180,9 @@ def test_design_endpoint_rejects_short_requirements(
 
     assert response.status_code == 422
     assert fake.called is False
+
+
+def test_removed_rag_endpoint_is_not_registered() -> None:
+    response = client.post("/api/v1/rag/query")
+
+    assert response.status_code == 404

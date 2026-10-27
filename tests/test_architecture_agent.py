@@ -37,7 +37,7 @@ class FakeAgent:
 def create_valid_response() -> ArchitectureResponse:
     return ArchitectureResponse(
         agent="ArchitectureAgent",
-        model_provider="foundry",
+        model_provider="openai",
         requirements_analysis=RequirementAnalysis(
             functional_requirements=["Upload PDFs"],
             non_functional_requirements=["Tenant isolation"],
@@ -85,12 +85,12 @@ def test_design_accepts_structured_model_response() -> None:
 
         result = await agent.design(
             requirements="Build a multi-tenant PDF processing platform",
-            model_provider="foundry",
+            model_provider="openai",
         )
 
         assert isinstance(result, ArchitectureResponse)
         assert result.agent == "ArchitectureAgent"
-        assert result.model_provider == "foundry"
+        assert result.model_provider == "openai"
         assert result.architecture.components[0].name == "Document Worker"
         assert "Build a multi-tenant PDF processing platform" in fake_agent.prompt
         assert fake_agent.options == {
@@ -126,7 +126,7 @@ def test_design_accepts_json_text_response() -> None:
 
         result = await agent.design(
             requirements="Build a multi-tenant PDF processing platform",
-            model_provider="foundry",
+            model_provider="openai",
         )
 
         assert isinstance(result, ArchitectureResponse)
@@ -145,7 +145,7 @@ def test_design_rejects_invalid_json() -> None:
         with pytest.raises(ValueError, match="valid JSON"):
             await agent.design(
                 requirements="Build a multi-tenant PDF processing platform",
-                model_provider="foundry",
+                model_provider="openai",
             )
 
     asyncio.run(scenario())
@@ -160,7 +160,7 @@ def test_design_rejects_invalid_schema() -> None:
         with pytest.raises(ValueError, match="schema"):
             await agent.design(
                 requirements="Build a multi-tenant PDF processing platform",
-                model_provider="foundry",
+                model_provider="openai",
             )
 
     asyncio.run(scenario())

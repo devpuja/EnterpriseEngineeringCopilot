@@ -19,15 +19,11 @@ _SETTINGS_VALUES = {
 }
 
 
-@pytest.mark.parametrize("backend", ["memory", "azure"])
-def test_settings_load_values_from_env_file(backend: str):
+def test_settings_load_values_from_env_file():
     with TemporaryDirectory() as directory:
         env_file = Path(directory) / ".env"
         env_file.write_text(
-            "\n".join(
-                f"{name}={value}"
-                for name, value in {**_SETTINGS_VALUES, "RAG_BACKEND": backend}.items()
-            ),
+            "\n".join(f"{name}={value}" for name, value in _SETTINGS_VALUES.items()),
             encoding="utf-8",
         )
 
@@ -36,92 +32,58 @@ def test_settings_load_values_from_env_file(backend: str):
 
     assert config.model_provider == "openai"
     assert config.openai_model == "test-model"
-    assert config.rag_backend == backend
 
 
-def test_rag_backend_defaults_to_memory():
-    with patch.dict(os.environ, _SETTINGS_VALUES, clear=True):
+def test_model_provider_defaults_to_openai():
+    env_values = {
+        key: value
+        for key, value in _SETTINGS_VALUES.items()
+        if key != "MODEL_PROVIDER"
+    }
+    with patch.dict(os.environ, env_values, clear=True):
         config = cast(Any, Settings)(_env_file=None)
 
-    assert config.rag_backend == "memory"
+    assert config.model_provider == "openai"
 
 
-def test_rag_backend_environment_overrides_env_file(tmp_path):
+def test_environment_overrides_env_file(tmp_path):
     env_file = tmp_path / ".env"
-    env_file.write_text("RAG_BACKEND=azure\n", encoding="utf-8")
+    env_file.write_text("OPENAI_MODEL=file-model\n", encoding="utf-8")
     with patch.dict(
-        os.environ, {**_SETTINGS_VALUES, "RAG_BACKEND": "memory"}, clear=True
+        os.environ, {**_SETTINGS_VALUES, "OPENAI_MODEL": "environment-model"}, clear=True
     ):
         config = cast(Any, Settings)(_env_file=env_file)
 
-    assert config.rag_backend == "memory"
-
-
-@pytest.mark.parametrize(
-    ("name", "value", "default"),
-    [
-        ("azure_search_endpoint", "https://example.search.windows.net", ""),
-        ("azure_search_index_name", "test-index", "engineering-knowledge-v2"),
-        ("azure_search_api_key", "test-search-key", ""),
-        ("azure_storage_account_url", "https://example.blob.core.windows.net", ""),
-        ("azure_storage_container", "test-documents", "engineering-documents"),
-        ("azure_storage_connection_string", "test-connection-string", ""),
-        ("azure_openai_embedding_deployment", "test-embeddings", ""),
-        ("rag_embedding_dimensions", 3072, 1536),
-        ("rag_chunk_size", 600, 1200),
-        ("rag_chunk_overlap", 50, 150),
-        ("entra_tenant_id", "test-tenant", ""),
-        ("entra_api_client_id", "test-client", ""),
-        ("entra_required_scope", "test-scope", "access_as_user"),
-    ],
-)
-def test_rag_settings_defaults_file_and_environment(tmp_path, name, value, default):
-    env_file = tmp_path / ".env"
-    env_file.write_text(f"{name.upper()}={value}\n", encoding="utf-8")
-    with patch.dict(os.environ, _SETTINGS_VALUES, clear=True):
-        config = cast(Any, Settings)(_env_file=None)
-        assert getattr(config, name) == default
-
-        config = cast(Any, Settings)(_env_file=env_file)
-        assert getattr(config, name) == value
-
-        with patch.dict(os.environ, {name.upper(): str(default)}):
-            config = cast(Any, Settings)(_env_file=env_file)
-            assert getattr(config, name) == default
+    assert config.openai_model == "environment-model"
 
 
 def test_only_common_settings_fields_are_required():
     assert {
         name for name, field in Settings.model_fields.items() if field.is_required()
-    } == {"app_name", "app_env", "log_level", "model_provider"}
+    } == {"app_name", "app_env", "log_level"}
 
 
-_PROVIDER_VALUES = {
-    "openai": {
-        "openai_api_key": "test-key",
-        "openai_model": "test-model",
-    },
-    "azure_openai": {
-        "azure_openai_endpoint": "https://example.openai.azure.com",
-        "azure_openai_chat_deployment": "test-model",
-    },
-    "foundry": {
-        "foundry_project_endpoint": "https://example.services.ai.azure.com/api/projects/test",
-        "foundry_model": "test-model",
-    },
-}
+def test_removed_integrations_have_no_settings():
+    assert not {
+        "azure_openai_endpoint",
+        "foundry_project_endpoint",
+        "azure_search_endpoint",
+        "azure_storage_account_url",
+        "entra_tenant_id",
+        "rag_backend",
+    }.intersection(Settings.model_fields)
 
 
-@pytest.mark.parametrize("provider", _PROVIDER_VALUES)
-def test_selected_provider_does_not_require_other_provider_settings(provider: str):
+def test_openai_provider_requires_key_and_model():
     with patch.dict(os.environ, {}, clear=True):
         config = cast(Any, Settings)(
             _env_file=None,
             app_name="Test App",
             app_env="test",
             log_level="INFO",
-            model_provider=provider.upper(),
-            **_PROVIDER_VALUES[provider],
+            model_provider="OPENAI",
+            openai_api_key="test-key",
+            openai_model="test-model",
         )
 
     with patch("app.config.settings.settings", config):
@@ -129,35 +91,26 @@ def test_selected_provider_does_not_require_other_provider_settings(provider: st
 
 
 @pytest.mark.parametrize(
-    ("provider", "missing_field"),
+    ("api_key", "model", "missing_setting"),
     [
-        (provider, field)
-        for provider, values in _PROVIDER_VALUES.items()
-        for field in values
+        ("", "test-model", "OPENAI_API_KEY"),
+        ("test-key", "", "OPENAI_MODEL"),
     ],
 )
-@pytest.mark.parametrize("empty_value", [False, True], ids=["omitted", "empty"])
-def test_selected_provider_requires_its_settings(
-    provider: str, missing_field: str, empty_value: bool
-):
-    values = _PROVIDER_VALUES[provider].copy()
-    if empty_value:
-        values[missing_field] = ""
-    else:
-        del values[missing_field]
-
+def test_openai_provider_requires_its_settings(api_key, model, missing_setting):
     with patch.dict(os.environ, {}, clear=True):
         config = cast(Any, Settings)(
             _env_file=None,
             app_name="Test App",
             app_env="test",
             log_level="INFO",
-            model_provider=provider,
-            **values,
+            model_provider="openai",
+            openai_api_key=api_key,
+            openai_model=model,
         )
 
     with patch("app.config.settings.settings", config):
-        with pytest.raises(ValueError, match=missing_field.upper()):
+        with pytest.raises(ValueError, match=missing_setting):
             validate_model_settings()
 
 
