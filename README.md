@@ -16,7 +16,8 @@ Provider names are case-insensitive. Settings for inactive providers can be omit
 for example, Foundry does not require OpenAI configuration.
 Azure OpenAI uses `DefaultAzureCredential` when `AZURE_OPENAI_API_KEY` is omitted.
 Foundry uses the Azure CLI identity (`az login`). Embeddings additionally require
-`FOUNDRY_EMBEDDING_MODEL`.
+`FOUNDRY_EMBEDDING_MODEL` and the OpenAI-compatible
+`FOUNDRY_OPENAI_ENDPOINT`.
 
 `RAG_BACKEND` is exposed as `settings.rag_backend` and defaults to `memory`.
 Backend selection and tenant checks both use this setting, loaded at startup

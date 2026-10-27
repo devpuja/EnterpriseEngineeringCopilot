@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     foundry_model: str = ""
     foundry_embedding_model: str = ""
 
-    rag_backend: str = "azure"
+    rag_backend: str = "memory"
     rag_embedding_dimensions: int = 1536
     rag_chunk_size: int = 1200
     rag_chunk_overlap: int = 150
@@ -72,7 +72,15 @@ def validate_model_settings() -> None:
             )
 
     if provider == "foundry":
-        if not settings.foundry_openai_endpoint or not settings.foundry_model:
+        missing_settings = [
+            name
+            for name, value in (
+                ("FOUNDRY_PROJECT_ENDPOINT", settings.foundry_project_endpoint),
+                ("FOUNDRY_MODEL", settings.foundry_model),
+            )
+            if not value
+        ]
+        if missing_settings:
             raise ValueError(
-                "Set FOUNDRY_OPENAI_ENDPOINT and FOUNDRY_MODEL in your .env file."
+                f"Set {' and '.join(missing_settings)} in your .env file."
             )

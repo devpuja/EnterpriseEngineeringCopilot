@@ -1,10 +1,11 @@
 from __future__ import annotations
+import random
+import re
+import time
 
-import asyncio
+from openai import RateLimitError
 from typing import Protocol
-
 from openai import APIStatusError
-
 from app.config.settings import settings
 
 
@@ -27,21 +28,25 @@ class AzureOpenAIEmbeddingProvider:
                 "Azure embeddings require AZURE_OPENAI_ENDPOINT and "
                 "AZURE_OPENAI_EMBEDDING_DEPLOYMENT."
             )
-        client_args = {
-            "azure_endpoint": endpoint,
-            "api_version": api_version,
-        }
         if api_key:
-            client_args["api_key"] = api_key
+            self._client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=api_version,
+                api_key=api_key,
+            )
         else:
             from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
             credential = DefaultAzureCredential()
-            client_args["azure_ad_token_provider"] = get_bearer_token_provider(
+            token_provider = get_bearer_token_provider(
                 credential, "https://cognitiveservices.azure.com/.default"
             )
+            self._client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=api_version,
+                azure_ad_token_provider=token_provider,
+            )
         self._deployment = deployment
-        self._client = AzureOpenAI(**client_args)
 
     def embed(self, text: str) -> list[float]:
         response = self._client.embeddings.create(model=self._deployment, input=text)
@@ -74,6 +79,8 @@ class FoundryEmbeddingProvider:
         self._client = OpenAI(
             base_url=self._endpoint,
             api_key=token_provider,
+            # Retries are handled below so Retry-After is respected consistently.
+            max_retries=0,
         )
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
@@ -81,15 +88,16 @@ class FoundryEmbeddingProvider:
             return []
 
         try:
-            response = self._client.embeddings.create(
-                model=self._model,
-                input=texts,
-                )
+            response = self._create_embeddings_with_retry(texts)
         except APIStatusError as exc:
-                print("Embedding HTTP status:", exc.status_code)
-                print("Embedding error:", str(exc))
-                print("Request ID:", exc.request_id)
-                print("Response headers:", {
+            # Keep diagnostic information useful when Azure returns a non-retryable
+            # error or the bounded retry policy is exhausted.
+            print("Embedding HTTP status:", exc.status_code)
+            print("Embedding error:", str(exc))
+            print("Request ID:", exc.request_id)
+            print(
+                "Response headers:",
+                {
                     key: exc.response.headers.get(key)
                     for key in (
                         "retry-after",
@@ -99,9 +107,10 @@ class FoundryEmbeddingProvider:
                         "x-ratelimit-reset-requests",
                     )
                     if exc.response.headers.get(key) is not None
-                })
-                raise
-        
+                },
+            )
+            raise
+
         vectors = [
             list(item.embedding)
             for item in sorted(response.data, key=lambda item: item.index)
@@ -123,3 +132,56 @@ class FoundryEmbeddingProvider:
 
     def embed(self, text: str) -> list[float]:
         return self.embed_many([text])[0]
+    
+    
+    def _create_embeddings_with_retry(self, texts: list[str]):
+        """Create embeddings with bounded retries for Azure 429 responses.
+
+        Azure may return a Retry-After header or include the wait time in the
+        error message. If neither is available, use a conservative 60-second
+        cooldown for rate-limit responses.
+        """
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            try:
+                return self._client.embeddings.create(
+                    model=self._model,
+                    input=texts,
+                )
+            except RateLimitError as exc:
+                if attempt == max_attempts - 1:
+                    raise
+
+                headers = exc.response.headers
+                delays: list[float] = []
+
+                retry_after = headers.get("retry-after")
+                if retry_after:
+                    try:
+                        delays.append(max(0.0, float(retry_after)))
+                    except (TypeError, ValueError):
+                        pass
+
+                retry_after_ms = headers.get("retry-after-ms")
+                if retry_after_ms:
+                    try:
+                        delays.append(max(0.0, float(retry_after_ms) / 1000.0))
+                    except (TypeError, ValueError):
+                        pass
+
+                match = re.search(
+                    r"retry after (\d+(?:\.\d+)?) seconds",
+                    str(exc),
+                    re.IGNORECASE,
+                )
+                if match:
+                    delays.append(float(match.group(1)))
+
+                # Azure's message in this incident explicitly requested 60 sec.
+                # Use 60 sec as a fallback and never retry sooner than a supplied
+                # server wait time. Small jitter helps avoid synchronized retries.
+                wait_seconds = max(delays) if delays else 60.0
+                time.sleep(wait_seconds + random.uniform(0.0, 1.0))
+
+        raise RuntimeError("Embedding retries exhausted.")

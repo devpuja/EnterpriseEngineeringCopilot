@@ -119,12 +119,12 @@ def test_blob_adapter_uses_shared_settings(monkeypatch, use_connection_string):
 
 def test_foundry_embeddings_use_shared_settings(monkeypatch):
     config = factory_module.settings
-    monkeypatch.setattr(config, "foundry_project_endpoint", "https://example.services.ai.azure.com/api/projects/test")
+    monkeypatch.setattr(config, "foundry_openai_endpoint", "https://example.openai.azure.com/openai/v1/")
     monkeypatch.setattr(config, "foundry_embedding_model", "test-embeddings")
     monkeypatch.setattr(config, "rag_embedding_dimensions", 3072)
-    monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
+    monkeypatch.delenv("FOUNDRY_OPENAI_ENDPOINT", raising=False)
     provider = FoundryEmbeddingProvider()
-    assert provider._endpoint == config.foundry_project_endpoint
+    assert provider._endpoint == config.foundry_openai_endpoint
     assert provider._model == "test-embeddings"
     assert provider._dimensions == 3072
 
@@ -138,7 +138,7 @@ def test_foundry_embeddings_use_shared_settings(monkeypatch):
             ["azure_storage_account_url", "azure_storage_connection_string"],
             "AZURE_STORAGE_ACCOUNT_URL",
         ),
-        (FoundryEmbeddingProvider, ["foundry_project_endpoint"], "FOUNDRY_PROJECT_ENDPOINT"),
+        (FoundryEmbeddingProvider, ["foundry_openai_endpoint"], "FOUNDRY_OPENAI_ENDPOINT"),
         (FoundryEmbeddingProvider, ["foundry_embedding_model"], "FOUNDRY_EMBEDDING_MODEL"),
     ],
 )

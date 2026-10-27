@@ -4,7 +4,7 @@ import hashlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.rag.chunking import chunk_text
 from app.rag.document_store import DocumentStore
@@ -33,28 +33,31 @@ class RagService:
     def _embed_many(self, texts: list[str]) -> list[list[float]] | None:
         if self._embeddings is None:
             return None
+        
         if not texts:
             return []
 
         batch_method = getattr(self._embeddings, "embed_many", None)
+
         if callable(batch_method):
-            # Keep each request small to reduce pressure on Azure embedding
-            # rate limits while still using the provider's batch API.
-            batch_size = 16
+            # Use fewer API requests during ingestion while keeping each request
+            # well below the service's maximum number of input items.
+            batch_size = 256
             vectors: list[list[float]] = []
             for start in range(0, len(texts), batch_size):
                 batch = texts[start : start + batch_size]
-                batch_vectors = batch_method(batch)
+                batch_vectors = cast(list[list[float]], batch_method(batch))
+
                 if len(batch_vectors) != len(batch):
                     raise RuntimeError(
-                        "Embedding provider returned a different number of "
-                        f"vectors than inputs: expected {len(batch)}, "
-                        f"received {len(batch_vectors)}."
+                        "Embedding provider returned an unexpected number of vectors."
                     )
+
                 vectors.extend(batch_vectors)
+
             return vectors
 
-        # Compatibility with existing/test providers implementing only embed().
+        # Compatibility with providers that implement only embed().
         return [self._embeddings.embed(text) for text in texts]
 
 
