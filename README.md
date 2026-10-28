@@ -61,6 +61,61 @@ Allow agents to use controlled engineering capabilities rather than only generat
 - Human approval for consequential actions
 - Safe tools for architecture analysis, repository inspection, and document generation
 
+## Implementation roadmap ##
+
+Phase 4.1 — Tool contracts and function calling
+Define a small set of typed tools using the existing MAF conventions.
+- Tool names, descriptions, input schemas, and output schemas.
+- Argument validation and predictable error responses.
+- Tool registration and invocation.
+- Tests for valid, invalid, and failed calls.
+Outcome: an agent can select and invoke a supported function safely.
+
+Phase 4.2 — Build an MCP server
+Expose selected engineering tools through the Model Context Protocol (MCP).
+- Understand MCP tools, schemas, and responses.
+- Implement a server using a compatible Python MCP SDK.
+- Expose a small, controlled set of capabilities.
+- Handle tool errors and server lifecycle.
+Outcome: tools can be discovered and used through a standard protocol rather than only through application-specific function registrations.
+
+Phase 4.3 — MCP client integration
+Connect the existing copilot to the MCP server.
+- Establish and close client sessions.
+- Discover available tools dynamically.
+- Map tool schemas into the agent's tool-calling workflow.
+- Invoke tools and return structured results.
+- Handle connection failures, timeouts, and unavailable tools.
+Outcome: the copilot can discover and use MCP tools without hard-coding every tool into the orchestration logic.
+
+Phase 4.4 — Controlled tool execution
+Add safeguards to the tool execution layer.
+- Allowlist permitted tools.
+- Validate arguments and restrict file paths.
+- Set timeouts and execution limits.
+- Return structured errors without exposing secrets.
+- Define connection trust and credential handling for MCP.
+- Require human approval for consequential or modifying actions.
+Outcome: tools are constrained by explicit application policies, not solely by the LLM's judgment.
+
+Phase 4.5 — Agent-as-tool and delegation
+Integrate specialized agents into controlled workflows.
+- Expose a specialized agent as a callable capability where appropriate.
+- Delegate repository analysis or architecture review to the relevant agent.
+- Keep the orchestrator responsible for the overall workflow.
+- Define clear inputs, outputs, and termination conditions.
+- Prevent unnecessary agent-to-agent calls and loops.
+Outcome: a multi-agent workflow with clear responsibilities rather than a collection of agents that call one another unpredictably.
+
+Phase 4.6 — Engineering tools and end-to-end workflow
+Implement practical tools that use the existing project capabilities.
+- Repository inspection: list and read files from an explicitly allowed workspace.
+- Architecture analysis: inspect source code and report structural findings.
+- Document generation: produce an architecture review or design report using existing generation capabilities.
+- Human approval: request approval before modifying files or performing other consequential actions.
+- End-to-end testing: verify tool discovery, delegation, output quality, and error handling.
+Outcome: a working engineering copilot workflow that delivers a tangible artifact, not just a text response.
+
 
 Phase 5 — Enterprise Security and Governance
 
