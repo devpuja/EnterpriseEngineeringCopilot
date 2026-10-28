@@ -143,7 +143,11 @@ Copy `.env.example` to `.env`. Required RAG behavior:
 - `RAG_METADATA_DATABASE`: SQLite document metadata database.
 - `MAX_UPLOAD_SIZE_BYTES`, `CHUNK_SIZE`, and `CHUNK_OVERLAP`: ingestion limits.
 - `RAG_TOP_K` and `RAG_CONTEXT_CHAR_LIMIT`: retrieval bounds.
+- `RAG_ADJACENT_CHUNK_RADIUS`: same-document neighboring chunk expansion radius.
+- `RAG_SOURCE_EXCERPT_CHAR_LIMIT`: maximum source preview length; each source also reports `excerpt_truncated`.
 - `EMBEDDING_TIMEOUT_SECONDS` and `EMBEDDING_MAX_RETRIES`: provider reliability limits.
+
+RAG answers expose both the model-reported `model_grounded` flag and a deterministic `verification_status` (`verified`, `unverified`, or `inconclusive`). The compatibility `grounded` field is conservative: it is true only for deterministic verification success, never from model self-reporting or source presence alone.
 
 Generating embeddings incurs OpenAI API usage charges. No live API call is made during application startup.
 

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     rag_top_k: int = 5
     rag_context_char_limit: int = 12_000
+    rag_adjacent_chunk_radius: int = 2
+    rag_source_excerpt_char_limit: int = 500
     embedding_timeout_seconds: float = 30
     embedding_max_retries: int = 3
 
@@ -49,6 +51,10 @@ def validate_rag_settings() -> None:
         raise ValueError("RAG_TOP_K must be positive.")
     if settings.rag_context_char_limit <= 0:
         raise ValueError("RAG_CONTEXT_CHAR_LIMIT must be positive.")
+    if settings.rag_adjacent_chunk_radius < 0 or settings.rag_adjacent_chunk_radius > 5:
+        raise ValueError("RAG_ADJACENT_CHUNK_RADIUS must be between 0 and 5.")
+    if settings.rag_source_excerpt_char_limit <= 0:
+        raise ValueError("RAG_SOURCE_EXCERPT_CHAR_LIMIT must be positive.")
     if settings.embedding_timeout_seconds <= 0:
         raise ValueError("EMBEDDING_TIMEOUT_SECONDS must be positive.")
     if settings.embedding_max_retries < 0:

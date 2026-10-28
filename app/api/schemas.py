@@ -101,6 +101,14 @@ class RAGSource(BaseModel):
     chunk_index: int
     page_number: int | None = None
     excerpt: str
+    excerpt_truncated: bool = False
+
+
+class RAGCitationReference(BaseModel):
+    document_id: str
+    filename: str
+    chunk_index: int
+    page_number: int | None = None
 
 
 class RAGQuery(BaseModel):
@@ -113,8 +121,11 @@ class RAGAnswer(BaseModel):
     grounded: bool
     sources: list[RAGSource]
     document_ids: list[str] = Field(default_factory=list)
+    model_grounded: bool = False
+    verification_status: Literal["verified", "unverified", "inconclusive"] = "unverified"
 
 
 class GeneratedRAGAnswer(BaseModel):
     answer: str
     grounded: bool
+    citations: list[RAGCitationReference] = Field(default_factory=list)

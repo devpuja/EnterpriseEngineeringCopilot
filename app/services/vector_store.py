@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import chromadb
 import numpy as np
 
-from app.services.document_ingestion import DocumentChunk
+from app.services.document_ingestion import DocumentChunk, stable_chunk_id
 
 
 class ChromaVectorStore:
@@ -51,6 +51,62 @@ class ChromaVectorStore:
         except Exception:
             # Collection deletes should remain explicit and predictable.
             self._collection.delete(where={"document_id": document_id})
+
+    def get_neighbor_chunks(
+        self,
+        results: list[dict[str, Any]],
+        radius: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Expand semantic hits with nearby chunks from the same document only."""
+        expanded: dict[tuple[str, int], dict[str, Any]] = {}
+
+        for result in results:
+            raw_metadata = result.get("metadata")
+            metadata: dict[str, Any] = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
+            document_id = str(metadata.get("document_id", ""))
+            chunk_index = metadata.get("chunk_index")
+            if not document_id or not isinstance(chunk_index, int):
+                continue
+
+            neighbor_ids: list[str] = []
+            for offset in range(-radius, radius + 1):
+                neighbor_index = chunk_index + offset
+                if neighbor_index < 0:
+                    continue
+                neighbor_ids.append(stable_chunk_id(document_id, neighbor_index))
+
+            try:
+                neighbors = self._collection.get(
+                    ids=neighbor_ids,
+                    include=["documents", "metadatas"],
+                )
+            except Exception:
+                continue
+
+            neighbor_ids_found = neighbors["ids"] or []
+            neighbor_documents = neighbors["documents"] or []
+            neighbor_metadatas = neighbors["metadatas"] or []
+
+            for chunk_id, text, metadata_value in zip(
+                neighbor_ids_found,
+                neighbor_documents,
+                neighbor_metadatas,
+            ):
+                normalized_metadata: dict[str, Any] = cast(
+                    dict[str, Any], metadata_value
+                ) if isinstance(metadata_value, dict) else {}
+                neighbor_document_id = str(normalized_metadata.get("document_id", ""))
+                neighbor_index = normalized_metadata.get("chunk_index")
+                if neighbor_document_id != document_id or not isinstance(neighbor_index, int):
+                    continue
+                expanded[(neighbor_document_id, neighbor_index)] = {
+                    "chunk_id": chunk_id,
+                    "text": text,
+                    "metadata": normalized_metadata,
+                    "distance": result.get("distance"),
+                }
+
+        return [expanded[key] for key in sorted(expanded, key=lambda item: (item[0], item[1]))]
 
     def search(
         self,

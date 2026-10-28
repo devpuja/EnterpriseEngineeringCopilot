@@ -55,6 +55,8 @@ def get_rag_service() -> RAGService:
         chunk_overlap=settings.chunk_overlap,
         top_k=settings.rag_top_k,
         context_char_limit=settings.rag_context_char_limit,
+        adjacent_chunk_radius=settings.rag_adjacent_chunk_radius,
+        source_excerpt_char_limit=settings.rag_source_excerpt_char_limit,
     )
 
 
@@ -108,6 +110,8 @@ def get_rag_service_embeddedless() -> RAGService:
         chunk_overlap=settings.chunk_overlap,
         top_k=settings.rag_top_k,
         context_char_limit=settings.rag_context_char_limit,
+        adjacent_chunk_radius=settings.rag_adjacent_chunk_radius,
+        source_excerpt_char_limit=settings.rag_source_excerpt_char_limit,
     )
 
 

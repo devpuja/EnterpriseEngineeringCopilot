@@ -60,7 +60,16 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 150) -> list[st
     chunks: list[str] = []
     start = 0
     while start < len(text):
-        end = min(start + chunk_size, len(text))
+        requested_end = min(start + chunk_size, len(text))
+        end = requested_end
+        if requested_end < len(text):
+            newline_positions = [
+                position
+                for position in range(max(start, requested_end - 200), requested_end)
+                if text[position] == "\n"
+            ]
+            if newline_positions:
+                end = newline_positions[-1]
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
