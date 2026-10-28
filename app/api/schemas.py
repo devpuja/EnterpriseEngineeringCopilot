@@ -128,4 +128,21 @@ class RAGAnswer(BaseModel):
 class GeneratedRAGAnswer(BaseModel):
     answer: str
     grounded: bool
-    citations: list[RAGCitationReference] = Field(default_factory=list)
+    citations: list[RAGCitationReference] = Field(
+        default_factory=lambda: list[RAGCitationReference]()
+    )
+
+class DiagramToolRequest(BaseModel):
+    """Request schema for the read-only Mermaid validation tool workflow."""
+
+    diagram: str = Field(
+        min_length=1,
+        max_length=20_000,
+        description="Raw Mermaid flowchart source, without Markdown code fences.",
+    )
+
+
+class DiagramToolResponse(BaseModel):
+    """Natural-language summary returned by the MAF tool-calling agent."""
+
+    answer: str = Field(min_length=1)
