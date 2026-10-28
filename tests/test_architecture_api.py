@@ -182,7 +182,7 @@ def test_design_endpoint_rejects_short_requirements(
     assert fake.called is False
 
 
-def test_removed_rag_endpoint_is_not_registered() -> None:
+def test_rag_query_endpoint_has_request_validation() -> None:
     response = client.post("/api/v1/rag/query")
 
-    assert response.status_code == 404
+    assert response.status_code == 422

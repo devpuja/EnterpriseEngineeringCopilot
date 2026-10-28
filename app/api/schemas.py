@@ -81,3 +81,40 @@ class ArchitectureResponse(BaseModel):
     risks: list[ArchitectureRisk]
     next_steps: list[str]
     review: ArchitectureReview | None = None
+
+
+class IndexedDocument(BaseModel):
+    document_id: str
+    filename: str
+    media_type: str
+    size_bytes: int
+    chunk_count: int
+    status: Literal["indexed", "failed"]
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class RAGSource(BaseModel):
+    document_id: str
+    filename: str
+    chunk_index: int
+    page_number: int | None = None
+    excerpt: str
+
+
+class RAGQuery(BaseModel):
+    question: str = Field(min_length=3, max_length=4000)
+    top_k: int | None = Field(default=None, ge=1, le=20)
+
+
+class RAGAnswer(BaseModel):
+    answer: str
+    grounded: bool
+    sources: list[RAGSource]
+    document_ids: list[str] = Field(default_factory=list)
+
+
+class GeneratedRAGAnswer(BaseModel):
+    answer: str
+    grounded: bool
