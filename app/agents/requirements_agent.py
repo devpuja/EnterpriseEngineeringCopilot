@@ -63,15 +63,16 @@ class RequirementsAnalysisAgent:
     def __init__(self, agent: Any | None = None) -> None:
         # Dependency injection allows unit tests to use a fake agent
         # without making real model calls.
-        self._agent = (
-            agent
-            if agent is not None
-            else Agent(
+        self._agent = agent
+
+    def _get_agent(self) -> Any:
+        if self._agent is None:
+            self._agent = Agent(
                 client=cast(Any, create_model_client()),
                 name="RequirementsAnalysisAgent",
                 instructions=REQUIREMENTS_ANALYSIS_INSTRUCTIONS,
             )
-        )
+        return self._agent
 
     async def analyze(self, requirements: str) -> RequirementAnalysis:
         """Convert a requirements description into a validated analysis."""
@@ -88,7 +89,7 @@ class RequirementsAnalysisAgent:
         )
 
         try:
-            result = await self._agent.run(
+            result = await self._get_agent().run(
                 prompt,
                 options={"response_format": RequirementAnalysis},
             )

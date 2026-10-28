@@ -119,15 +119,16 @@ def _filter_findings_contradicted_by_architecture(response: ArchitectureResponse
 
 class ArchitectureReviewAgent:
     def __init__(self, agent: Any | None = None) -> None:
-        self._agent = (
-            agent
-            if agent is not None
-            else Agent(
+        self._agent = agent
+
+    def _get_agent(self) -> Any:
+        if self._agent is None:
+            self._agent = Agent(
                 client=cast(Any, create_model_client()),
                 name="ArchitectureReviewAgent",
                 instructions=ARCHITECTURE_REVIEW_INSTRUCTIONS,
             )
-        )
+        return self._agent
 
     @staticmethod
     def _parse_review(result: Any) -> ArchitectureReview:
@@ -176,7 +177,7 @@ class ArchitectureReviewAgent:
             f"{response.model_dump_json(indent=2)}"
         )
 
-        result = await self._agent.run(
+        result = await self._get_agent().run(
             prompt,
             options={"response_format": ArchitectureReview},
         )

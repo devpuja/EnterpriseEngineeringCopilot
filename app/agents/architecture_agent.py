@@ -338,19 +338,33 @@ class ArchitectureAgent:
     """Generates validated architecture decision packages."""
 
     def __init__(self) -> None:
-        client = cast(Any, create_model_client())
-        self._agent: Any = Agent(
-            client=client,
-            name="ArchitectureAgent",
-            instructions=ARCHITECTURE_INSTRUCTIONS,
-        )
-        self._diagram_agent: Any = Agent(
-            client=client,
-            name="ArchitectureDiagramRepairAgent",
-            instructions=DIAGRAM_REPAIR_INSTRUCTIONS,
-        )
+        self._client: Any | None = None
+        self._agent: Any | None = None
+        self._diagram_agent: Any | None = None
 
-    
+    def _get_client(self) -> Any:
+        if self._client is None:
+            self._client = cast(Any, create_model_client())
+        return self._client
+
+    def _get_agent(self) -> Any:
+        if self._agent is None:
+            self._agent = Agent(
+                client=self._get_client(),
+                name="ArchitectureAgent",
+                instructions=ARCHITECTURE_INSTRUCTIONS,
+            )
+        return self._agent
+
+    def _get_diagram_agent(self) -> Any:
+        if self._diagram_agent is None:
+            self._diagram_agent = Agent(
+                client=self._get_client(),
+                name="ArchitectureDiagramRepairAgent",
+                instructions=DIAGRAM_REPAIR_INSTRUCTIONS,
+            )
+        return self._diagram_agent
+
     async def design(
         self,
         requirements: str,
@@ -447,7 +461,7 @@ class ArchitectureAgent:
 
         try:
             
-            result = await self._agent.run(
+            result = await self._get_agent().run(
                 prompt,
                 options={
                     "response_format": ArchitectureResponse,
@@ -591,7 +605,7 @@ class ArchitectureAgent:
 
         # The dedicated agent has diagram-only instructions and shares the
         # configured model client. This call is intentionally attempted once.
-        diagram_agent = getattr(self, "_diagram_agent", self._agent)
+        diagram_agent = self._get_diagram_agent()
         result = await diagram_agent.run(
             prompt,
             options={"response_format": MermaidDiagramResponse},
