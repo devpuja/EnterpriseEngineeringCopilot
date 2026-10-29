@@ -117,7 +117,7 @@ Implement practical tools that use the existing project capabilities.
 Outcome: a working engineering copilot workflow that delivers a tangible artifact, not just a text response.
 
 
-Phase 5 — Enterprise Security and Governance
+<!-- Phase 5 — Enterprise Security and Governance
 
 Make the copilot safe for enterprise workloads and sensitive engineering data.
 - Microsoft Entra ID, authentication, authorization, and RBAC
@@ -126,7 +126,30 @@ Make the copilot safe for enterprise workloads and sensitive engineering data.
 - Prompt injection and indirect prompt injection defenses
 - Input validation, output validation, and tool permission boundaries
 - Content safety, sensitive-data protection, audit logs, and threat modeling
-- Network isolation and least-privilege access where required
+- Network isolation and least-privilege access where required -->
+
+Phase 5 — Enterprise Security
+Next: establish the security architecture and implement safeguards incrementally.
+
+Starting
+
+1. What will we build?
+The goal is to move the Copilot from a locally functioning multi-agent application toward a system with enterprise-grade security controls.
+
+5.1 — Authentication
+Establish how callers prove their identity before accessing protected APIs.
+
+5.2 — Authorization and access control
+Define which users or roles can invoke APIs, use tools, and approve actions.
+
+5.3 — Secure tool and MCP execution
+Enforce tool permissions, validate inputs, and prevent unauthorized or unsafe operations.
+
+5.4 — Approval security and audit trail
+Connect approval decisions to authenticated reviewers and record security-relevant actions.
+
+5.5 — Secrets and sensitive-data protection
+Prevent credentials, sensitive information, and internal errors from leaking through logs or API responses.
 
 
 Phase 6 — Observability, Evaluation, LLMOps and GenAIOps
@@ -142,7 +165,7 @@ Measure quality and operate the AI lifecycle reliably, not just monitor whether 
 - Microsoft Foundry evaluation and observability capabilities where appropriate
 
 
-Phase 7 — Microsoft Foundry, Azure Deployment and Production
+Phase 7 — Microsoft Foundry, Azure Deployment and Production (not implemented)
 
 Deploy, secure, scale, and operate the end-to-end solution.
 - Microsoft Foundry projects, model catalog, model deployments, and endpoint configuration

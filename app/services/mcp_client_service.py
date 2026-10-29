@@ -16,11 +16,35 @@ ALLOWED_MCP_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+# True means explicit approval is required before execution.
+# Every allowlisted tool must have an entry.
+TOOL_APPROVAL_REQUIRED: dict[str, bool] = {
+    "validate_architecture_diagram": False,
+}
 
-def _ensure_allowed_tool(tool_name: str) -> None:
-    """Reject MCP tools that are not explicitly allowlisted."""
+
+# def _ensure_allowed_tool(tool_name: str) -> None:
+#     """Reject MCP tools that are not explicitly allowlisted."""
+#     if tool_name not in ALLOWED_MCP_TOOLS:
+#         raise ValueError(f"MCP tool '{tool_name}' is not allowed.")
+
+
+def ensure_tool_execution_allowed(tool_name: str, *, approved: bool = False) -> None:
+    """Enforce tool allowlisting and the configured approval policy."""
     if tool_name not in ALLOWED_MCP_TOOLS:
         raise ValueError(f"MCP tool '{tool_name}' is not allowed.")
+
+    approval_required = TOOL_APPROVAL_REQUIRED.get(tool_name)
+
+    if approval_required is None:
+        raise ValueError(
+            f"No approval policy is configured for MCP tool '{tool_name}'."
+        )
+
+    if approval_required and not approved:
+        raise PermissionError(
+            f"MCP tool '{tool_name}' requires explicit approval."
+        )
 
 
 
@@ -40,8 +64,9 @@ async def validate_architecture_diagram(
     
     """Invoke the allowlisted diagram-validation tool through MCP."""
     tool_name = "validate_architecture_diagram"
-    _ensure_allowed_tool(tool_name)
-
+    # _ensure_allowed_tool(tool_name)
+    ensure_tool_execution_allowed(tool_name)
+    
     try:
         async with asyncio.timeout(settings.mcp_timeout_seconds):
             async with Client(settings.mcp_server_url) as client:
