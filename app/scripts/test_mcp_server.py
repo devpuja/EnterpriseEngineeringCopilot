@@ -98,6 +98,7 @@ async def main() -> None:
 
         print("PASS: Invalid diagram returned validation errors.")
 
+
         # TEST 2: Oversized diagram
         print("\n=== TEST 2: Oversized diagram ===")
         print(f"Maximum permitted characters: {MAX_DIAGRAM_CHARS}")
@@ -168,6 +169,90 @@ async def main() -> None:
             )
 
             print("PASS: Oversized input was rejected.")
+            
+        
+        
+        # TEST 3: Empty diagram
+        print("\n=== TEST 3: Empty diagram ===")
+
+        try:
+            empty_result = await client.call_tool(
+                TOOL_NAME,
+                {"diagram": ""},
+            )
+        except Exception as exc:
+            message_lower = str(exc).lower()
+
+            assert any(
+                word in message_lower
+                for word in (
+                    "minimum",
+                    "at least",
+                    "min_length",
+                    "validation",
+                    "character",
+                )
+            ), (
+                "Empty input was rejected, but the error did not "
+                "clearly indicate an input-validation failure."
+            )
+
+            print("PASS: Empty input was rejected by input validation.")
+        else:
+            print_result(empty_result)
+
+            assert empty_result.is_error, (
+                "Expected the MCP server to reject an empty diagram."
+            )
+
+            print("PASS: Empty input was rejected by the MCP server.")
+            
+        
+        
+        # TEST 4: Whitespace-only diagram
+        print("\n=== TEST 4: Whitespace-only diagram ===")
+
+        whitespace_result = await client.call_tool(
+            TOOL_NAME,
+            {"diagram": "   \n\t   "},
+        )
+
+        print_result(whitespace_result)
+
+        assert not whitespace_result.is_error, (
+            "Whitespace-only input should return a controlled "
+            "diagram-validation result."
+        )
+
+        whitespace_text = extract_result_text(whitespace_result)
+        whitespace_payload = parse_json_object(whitespace_text)
+
+        assert whitespace_payload is not None, (
+            "Expected a JSON validation result for whitespace-only input."
+        )
+
+        assert whitespace_payload.get("valid") is False, (
+            "Expected whitespace-only input to be marked invalid."
+        )
+
+        whitespace_errors = whitespace_payload.get("errors")
+
+        assert isinstance(whitespace_errors, list), (
+            "Expected validation errors to be returned as a list."
+        )
+
+        assert len(whitespace_errors) > 0, (
+            "Expected whitespace-only input to return validation errors."
+        )
+
+        for error in whitespace_errors:
+            assert isinstance(error, str), (
+                "Expected each validation error to be a string."
+            )
+
+        print("PASS: Whitespace-only input returned controlled validation errors.")
+
+
 
 
 if __name__ == "__main__":
