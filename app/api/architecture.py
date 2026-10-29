@@ -86,3 +86,66 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
             status_code=502,
             detail="Architecture generation failed. Check application logs.",
         ) from exc
+        
+    
+@router.post(
+    "/design-delegated",
+    response_model=ArchitectureResponse,
+)
+async def design_architecture_delegated(
+    request: ArchitectureRequest,
+) -> ArchitectureResponse:
+    """Generate architecture using parent-agent delegation."""
+    request_id = str(uuid4())
+    started_at = time.perf_counter()
+    provider = settings.model_provider.lower()
+
+    logger.info(
+        "event=delegated_architecture_generation_started "
+        "request_id=%s provider=%s",
+        request_id,
+        provider,
+    )
+
+    try:
+        response = await architecture_agent.design_with_delegation(
+            requirements=request.requirements,
+            model_provider=provider,
+        )
+
+        logger.info(
+            "event=delegated_architecture_generation_succeeded "
+            "request_id=%s provider=%s duration_ms=%.2f",
+            request_id,
+            provider,
+            (time.perf_counter() - started_at) * 1000,
+        )
+
+        return response
+
+    except ValueError as exc:
+        logger.warning(
+            "event=delegated_architecture_generation_invalid_output "
+            "request_id=%s error_type=%s",
+            request_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="The delegation coordinator returned invalid data.",
+        ) from exc
+
+    except Exception as exc:
+        logger.exception(
+            "event=delegated_architecture_generation_failed "
+            "request_id=%s error_type=%s",
+            request_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Delegated architecture generation failed. "
+                "Check application logs."
+            ),
+        ) from exc
