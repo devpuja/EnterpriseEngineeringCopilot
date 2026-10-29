@@ -32,6 +32,7 @@ def validate_architecture_diagram(
         ),
     ],
 ) -> str:
+    
     """Validate a Mermaid architecture diagram using deterministic rules."""
     return validate_diagram_contract(diagram)
 

@@ -5,7 +5,8 @@ from typing import Any
 from agent_framework import Agent
 
 from app.services.model_client import create_model_client
-from app.tools.diagram_validation import validate_architecture_diagram
+from app.services.mcp_client_service import validate_architecture_diagram
+
 
 DIAGRAM_TOOL_AGENT_INSTRUCTIONS = """
 You are an engineering diagram validation assistant.
