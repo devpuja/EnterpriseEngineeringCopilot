@@ -25,10 +25,22 @@ async def review_diagram(request: DiagramToolRequest) -> DiagramToolResponse:
         return DiagramToolResponse(answer=answer)
     except ValueError as exc:
         logger.warning("Diagram tool agent returned an invalid response: %s", exc)
+        
         raise HTTPException(
             status_code=502,
             detail="The diagram validation agent returned an invalid response.",
         ) from exc
+
+    except TimeoutError as exc:
+        logger.warning(
+            "Diagram validation timed out; error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail="Diagram validation timed out. Please try again.",
+        ) from exc
+        
     except Exception as exc:
         logger.exception(
             "Diagram validation tool workflow failed; error_type=%s",
