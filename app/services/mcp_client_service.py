@@ -1,8 +1,8 @@
 
 """MCP client service for invoking engineering tools."""
 
+import asyncio
 from typing import Annotated
-
 from mcp import Client
 from pydantic import Field
 
@@ -23,6 +23,7 @@ def _ensure_allowed_tool(tool_name: str) -> None:
         raise ValueError(f"MCP tool '{tool_name}' is not allowed.")
 
 
+
 async def validate_architecture_diagram(
     diagram: Annotated[
         str,
@@ -41,11 +42,18 @@ async def validate_architecture_diagram(
     tool_name = "validate_architecture_diagram"
     _ensure_allowed_tool(tool_name)
 
-    async with Client(settings.mcp_server_url) as client:
-        result = await client.call_tool(
-            tool_name,
-            {"diagram": diagram},
-        )
+    try:
+        async with asyncio.timeout(settings.mcp_timeout_seconds):
+            async with Client(settings.mcp_server_url) as client:
+                result = await client.call_tool(
+                    tool_name,
+                    {"diagram": diagram},
+                )
+    except TimeoutError as exc:
+        raise TimeoutError(
+            "The MCP tool call exceeded the configured timeout "
+            f"of {settings.mcp_timeout_seconds:g} seconds."
+        ) from exc
 
     if result.is_error:
         raise RuntimeError(
