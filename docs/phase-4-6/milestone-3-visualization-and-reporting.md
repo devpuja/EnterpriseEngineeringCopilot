@@ -39,12 +39,16 @@ Rendering uses local temporary files and is cleaned automatically. No repository
 
 The report structure includes cover, executive summary, repository overview, existing architecture, diagrams, technology stack, component/dependency analysis, API architecture, database/persistence architecture, integrations, findings, limitations, evidence references, and appendix sections. Unsupported content is omitted or explicitly described as unavailable.
 
+`ReportConfiguration` controls the selected diagram types, section inclusion and exclusion, evidence, confidence labels, limitations, Mermaid source fallback, and rendered-diagram embedding. The generated report and every exporter enforce the same effective configuration. Section references are filtered so they cannot point to an excluded diagram type.
+
 ## Export formats
 
 - Markdown: `.md` with Mermaid source blocks and evidence references.
-- HTML: escaped document content, styled print-friendly layout, navigation, and no repository-provided scripts.
-- PDF: generated with ReportLab; diagrams include a Mermaid source fallback.
-- DOCX: generated with python-docx; sections, headings, evidence, and Mermaid source fallback are included.
+- HTML: escaped document content, styled print-friendly layout, navigation, sanitized SVG or embedded PNG diagrams, and optional Mermaid source fallback.
+- PDF: generated with ReportLab; embedded PNG takes precedence, with escaped text and optional Mermaid source fallback.
+- DOCX: generated with python-docx; sections, headings, embedded PNG media, evidence, and optional Mermaid source fallback are included.
+
+HTML SVG output is parsed, reduced to safe SVG elements, and stripped of script, foreign-object, event-handler, executable URL, and external-resource content before base64 embedding. PDF repository-derived text is XML/markup escaped before passing it to ReportLab paragraphs, and line breaks are preserved. PNG data is embedded directly when available. Rendered output is never embedded from a remote service.
 
 ## Dependencies
 
@@ -60,6 +64,9 @@ Mermaid rendering still requires the optional local Mermaid CLI (`mmdc`) and Nod
 - Repository code is never executed.
 - Labels and report text are sanitized or escaped.
 - HTML output contains no repository-derived executable markup.
+- Sanitized SVG or PNG content is embedded in HTML; PDF and DOCX prefer embedded PNG.
+- SVG content with script or executable/external resource payloads is not accepted unsafely.
+- ReportLab text is XML escaped and control characters are removed before rendering.
 - Secret patterns and connection strings are redacted from exported text.
 - Absolute local source references are withheld.
 - Exported models expose managed relative artifact references, not internal absolute paths.

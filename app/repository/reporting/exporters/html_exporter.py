@@ -2,7 +2,7 @@ import html
 from pathlib import Path
 
 from app.repository.reporting.artifact_manager import ArtifactManager
-from app.repository.reporting.exporters.base import redact_sensitive_text
+from app.repository.reporting.exporters.base import redact_sensitive_text, svg_data_uri
 from app.repository.reporting.models import ArchitectureReport, ReportExportResult, ReportFormat
 
 
@@ -24,17 +24,31 @@ class HTMLExporter:
                 + (
                     "<p>Evidence: "
                     + html.escape(", ".join(section.evidence_references))
-                    + "</p>" if section.evidence_references else ""
+                    + "</p>" if report.configuration.include_evidence and section.evidence_references else ""
                 )
                 + "</section>"
             )
         diagram_blocks = []
         for diagram in report.diagrams:
-            diagram_blocks.append(
-                "<section><h2>" + html.escape(redact_sensitive_text(diagram.title)) + "</h2>"
-                "<pre><code>" + html.escape(redact_sensitive_text(diagram.mermaid_source)) + "</code></pre>"
-                "</section>"
-            )
+            block = "<section><h2>" + html.escape(redact_sensitive_text(diagram.title)) + "</h2>"
+            if report.configuration.include_rendered_diagrams:
+                if diagram.rendered_svg:
+                    uri = svg_data_uri(diagram.rendered_svg)
+                    if uri:
+                        block += '<img class="architecture-diagram" alt="' + html.escape(diagram.title, quote=True) + '" src="' + uri + '">'
+                    elif diagram.rendered_png:
+                        from base64 import b64encode
+                        uri = "data:image/png;base64," + b64encode(diagram.rendered_png).decode("ascii")
+                        block += '<img class="architecture-diagram" alt="' + html.escape(diagram.title, quote=True) + '" src="' + uri + '">'
+                elif diagram.rendered_png:
+                    from base64 import b64encode
+                    uri = "data:image/png;base64," + b64encode(diagram.rendered_png).decode("ascii")
+                    block += '<img class="architecture-diagram" alt="' + html.escape(diagram.title, quote=True) + '" src="' + uri + '">'
+            if report.configuration.include_mermaid_source:
+                block += "<pre><code>" + html.escape(redact_sensitive_text(diagram.mermaid_source)) + "</code></pre>"
+            if report.configuration.include_evidence and diagram.evidence_references:
+                block += "<p>Evidence: " + html.escape(", ".join(diagram.evidence_references)) + "</p>"
+            diagram_blocks.append(block + "</section>")
         document = (
             "<!doctype html><html><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"

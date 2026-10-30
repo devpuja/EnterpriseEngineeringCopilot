@@ -17,22 +17,25 @@ class MarkdownExporter:
             lines.append(f"## {redact_sensitive_text(section.title)}")
             lines.append("")
             lines.append(redact_sensitive_text(section.content))
-            if section.evidence_references:
+            if report.configuration.include_evidence and section.evidence_references:
                 lines.append("")
                 lines.append("Evidence: " + ", ".join(section.evidence_references))
             lines.append("")
         for diagram in report.diagrams:
             lines.append(f"### Diagram: {redact_sensitive_text(diagram.title)}")
             lines.append("")
-            lines.append("```mermaid")
-            lines.append(redact_sensitive_text(diagram.mermaid_source))
-            lines.append("```")
+            if report.configuration.include_rendered_diagrams and diagram.rendered_png:
+                lines.append("> Rendered PNG diagram is available in the binary HTML/PDF/DOCX export variants.")
+            if report.configuration.include_mermaid_source:
+                lines.append("```mermaid")
+                lines.append(redact_sensitive_text(diagram.mermaid_source))
+                lines.append("```")
             if diagram.generation_warnings:
                 lines.append("")
                 lines.append("Warnings: " + "; ".join(
                     redact_sensitive_text(item) for item in diagram.generation_warnings
                 ))
-            if diagram.evidence_references:
+            if report.configuration.include_evidence and diagram.evidence_references:
                 lines.append("")
                 lines.append("Evidence: " + ", ".join(diagram.evidence_references))
             lines.append("")

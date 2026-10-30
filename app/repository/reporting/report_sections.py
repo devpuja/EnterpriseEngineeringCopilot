@@ -14,18 +14,33 @@ class ReportSections:
     ) -> list[ReportSection]:
         configuration = configuration or ReportConfiguration()
         sections: list[ReportSection] = []
+        selected_visualization_diagrams = [
+            diagram for diagram in visualization.diagrams
+            if not configuration.selected_diagram_types
+            or diagram.diagram_type.value in configuration.selected_diagram_types
+        ]
 
         def add(section_id: str, title: str, content: str, evidence: list[str] | None = None, diagrams: list[str] | None = None):
-            if configuration.include_sections and section_id not in configuration.include_sections:
+            mandatory_section = section_id in {"limitations", "evidence_references"}
+            if configuration.include_sections and not mandatory_section and section_id not in configuration.include_sections:
                 return
             if section_id in configuration.exclude_sections:
                 return
+            selected_diagram_ids = {
+                diagram.diagram_id for diagram in visualization.diagrams
+                if not configuration.selected_diagram_types
+                or diagram.diagram_type.value in configuration.selected_diagram_types
+            }
+            section_diagrams = [
+                diagram_id for diagram_id in (diagrams or [])
+                if diagram_id in selected_diagram_ids
+            ]
             sections.append(ReportSection(
                 section_id=section_id,
                 title=title,
                 content=content.strip(),
-                evidence_references=evidence or [],
-                related_diagram_ids=diagrams or [],
+                evidence_references=(evidence or []) if configuration.include_evidence else [],
+                related_diagram_ids=section_diagrams,
             ))
 
         safe_source = self._safe_source_reference(analysis)
@@ -38,11 +53,15 @@ class ReportSections:
         ))
 
         technologies = ", ".join(sorted({item.name for item in analysis.technology_stack})) or "No supported technology findings"
-        add("executive_summary", "Executive Summary", (
+        executive_content = (
             f"{analysis.summary}\n\n"
             f"Main technologies: {technologies}.\n\n"
-            "Important limitation: findings are based on static repository analysis; runtime behavior and deployment topology were not observed."
-        ))
+            + (
+                "Important limitation: findings are based on static repository analysis; runtime behavior and deployment topology were not observed."
+                if configuration.include_limitations else ""
+            )
+        )
+        add("executive_summary", "Executive Summary", executive_content)
 
         entry_points = "\n".join(
             f"- {item.entry_point_type}: `{item.relative_path}`"
@@ -63,7 +82,9 @@ class ReportSections:
         ), sorted({e for item in analysis.projects for e in item.evidence_references}))
 
         patterns = "\n".join(
-            f"- {item.name}: {item.explanation} (confidence: {item.confidence.value}; limitation: {item.limitations})"
+            f"- {item.name}: {item.explanation}"
+            + (f" (confidence: {item.confidence.value})" if configuration.include_confidence else "")
+            + (f"; limitation: {item.limitations}" if configuration.include_limitations else "")
             for item in analysis.architectural_patterns
             if item.name.lower() != "not determined"
         ) or "- No sufficiently supported architecture pattern was identified."
@@ -75,13 +96,15 @@ class ReportSections:
         add(
             "architecture_diagrams",
             "Architecture Diagrams",
-            "\n".join(f"- {item.title} (`{item.diagram_id}`)" for item in visualization.diagrams)
+            "\n".join(f"- {item.title} (`{item.diagram_id}`)" for item in selected_visualization_diagrams)
             or "- No architecture diagrams were generated.",
-            diagrams=[item.diagram_id for item in visualization.diagrams],
+            diagrams=[item.diagram_id for item in selected_visualization_diagrams],
         )
 
         technology_lines = "\n".join(
-            f"- {item.name} ({item.category}, {item.confidence.value})"
+            f"- {item.name} ({item.category}"
+            + (f", {item.confidence.value}" if configuration.include_confidence else "")
+            + ")"
             for item in analysis.technology_stack
         ) or "- No supported technology findings were identified."
         add("technology_stack", "Technology Stack", technology_lines, sorted({
@@ -90,7 +113,9 @@ class ReportSections:
 
         dependency_lines = "\n".join(
             f"- {item.source} --{item.dependency_type}--> {item.target} "
-            f"(resolved: {'yes' if item.resolved else 'no'}, confidence: {item.confidence.value})"
+            f"(resolved: {'yes' if item.resolved else 'no'}"
+            + (f", confidence: {item.confidence.value}" if configuration.include_confidence else "")
+            + ")"
             for item in analysis.dependencies
         ) or "- No supported project dependency findings were identified."
         add("components_dependencies", "Component and Dependency Analysis", dependency_lines, diagrams=[
@@ -111,7 +136,8 @@ class ReportSections:
         ])
 
         database_lines = "\n".join(
-            f"- {item.technology}: {item.evidence_type} ({item.confidence.value})"
+            f"- {item.technology}: {item.evidence_type}"
+            + (f" ({item.confidence.value})" if configuration.include_confidence else "")
             for item in analysis.database_findings
         ) or "- No supported database or persistence findings were identified."
         add("database_architecture", "Database and Persistence Architecture", database_lines, diagrams=[
@@ -119,7 +145,8 @@ class ReportSections:
         ])
 
         integration_lines = "\n".join(
-            f"- {item.name}: {item.integration_type}, status {item.status}, confidence {item.confidence.value}"
+            f"- {item.name}: {item.integration_type}, status {item.status}"
+            + (f", confidence: {item.confidence.value}" if configuration.include_confidence else "")
             for item in analysis.external_integrations
         ) or "- No supported external integration findings were identified."
         add("external_integrations", "External Integrations", integration_lines, diagrams=[
@@ -136,22 +163,24 @@ class ReportSections:
             *visualization.visualization_warnings,
         ]))
         limitation_content = "\n".join(f"- {item}" for item in limitations) or "- Static analysis limitations could not be determined."
-        add("limitations", "Limitations and Unknowns", limitation_content)
+        if configuration.include_limitations:
+            add("limitations", "Limitations and Unknowns", limitation_content)
 
         evidence_lines = "\n".join(
             f"- {item.evidence_id}: `{item.relative_path}` ({item.category.value}) - {item.explanation}"
             for item in analysis.evidence
         ) or "- No evidence references were recorded."
-        add("evidence_references", "Evidence References", evidence_lines, sorted(
-            item.evidence_id for item in analysis.evidence
-        ))
+        if configuration.include_evidence:
+            add("evidence_references", "Evidence References", evidence_lines, sorted(
+                item.evidence_id for item in analysis.evidence
+            ))
 
         add("appendix", "Appendix", (
             f"- Analysis ID: {analysis.analysis_id}\n"
             f"- Repository: {analysis.repository_name}\n"
             f"- Visualization result: {visualization.result_id}\n"
             "- Supported scope: static repository analysis for .NET/C#, Python, Angular, and React technologies.\n"
-            f"- Diagram count: {len(visualization.diagrams)}"
+            f"- Diagram count: {len(selected_visualization_diagrams)}"
         ), diagrams=[item.diagram_id for item in visualization.diagrams])
         return sections
 

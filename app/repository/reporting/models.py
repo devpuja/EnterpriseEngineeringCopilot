@@ -19,11 +19,11 @@ class ReportConfiguration(BaseModel):
     selected_diagram_types: list[str] = Field(default_factory=list)
     include_sections: list[str] = Field(default_factory=list)
     exclude_sections: list[str] = Field(default_factory=list)
-    include_evidence: bool = True
-    include_confidence: bool = True
-    include_limitations: bool = True
-    include_mermaid_source: bool = True
-    include_rendered_diagrams: bool = True
+    include_evidence: bool = Field(default=True, exclude=True)
+    include_confidence: bool = Field(default=True, exclude=True)
+    include_limitations: bool = Field(default=True, exclude=True)
+    include_mermaid_source: bool = Field(default=True, exclude=True)
+    include_rendered_diagrams: bool = Field(default=True, exclude=True)
     output_format: ReportFormat = ReportFormat.markdown
     organization_name: str | None = None
     project_name: str | None = None
@@ -57,6 +57,7 @@ class ArchitectureReport(BaseModel):
     diagrams: list[ArchitectureDiagram] = Field(default_factory=lambda: list[ArchitectureDiagram]())
     report_metadata: ReportMetadata
     limitations: list[str] = Field(default_factory=list)
+    configuration: ReportConfiguration = Field(default_factory=ReportConfiguration)
 
 
 class ReportExportResult(BaseModel):

@@ -41,16 +41,22 @@ class DOCXExporter:
                 document.add_heading(redact_sensitive_text(report_section.title), level=1)
                 for line in redact_sensitive_text(report_section.content).splitlines():
                     document.add_paragraph(line)
-                if report_section.evidence_references:
+                if report.configuration.include_evidence and report_section.evidence_references:
                     document.add_paragraph(
                         "Evidence: " + ", ".join(report_section.evidence_references)
                     )
 
             for diagram in report.diagrams:
                 document.add_heading(redact_sensitive_text(diagram.title), level=1)
-                document.add_paragraph("Mermaid source fallback:")
-                document.add_paragraph(redact_sensitive_text(diagram.mermaid_source))
-                if diagram.evidence_references:
+                if report.configuration.include_rendered_diagrams and diagram.rendered_png:
+                    try:
+                        document.add_picture(BytesIO(diagram.rendered_png), width=None)
+                    except Exception:
+                        pass
+                if report.configuration.include_mermaid_source:
+                    document.add_paragraph("Mermaid source fallback:")
+                    document.add_paragraph(redact_sensitive_text(diagram.mermaid_source))
+                if report.configuration.include_evidence and diagram.evidence_references:
                     document.add_paragraph("Evidence: " + ", ".join(diagram.evidence_references))
 
             buffer = BytesIO()
