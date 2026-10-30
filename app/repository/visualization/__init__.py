@@ -13,6 +13,12 @@ from app.repository.visualization.contracts import (
     DiagramGeneratorContract,
     DiagramRendererContract,
 )
+from app.repository.visualization.architecture_visualizer import ArchitectureVisualizer
+from app.repository.visualization.diagram_generator import DiagramGenerator
+from app.repository.visualization.diagram_layout import DiagramLayout
+from app.repository.visualization.diagram_renderer import DiagramRenderer
+from app.repository.visualization.diagram_validator import DiagramValidator, DiagramValidationResult
+from app.repository.visualization.evidence_mapper import EvidenceMapper
 
 __all__ = [
     "ArchitectureDiagram",
@@ -26,4 +32,11 @@ __all__ = [
     "ArchitectureVisualizerContract",
     "DiagramGeneratorContract",
     "DiagramRendererContract",
+    "ArchitectureVisualizer",
+    "DiagramGenerator",
+    "DiagramLayout",
+    "DiagramRenderer",
+    "DiagramValidator",
+    "DiagramValidationResult",
+    "EvidenceMapper",
 ]
