@@ -138,6 +138,143 @@ def test_unresolved_dependency_and_evidence_traceability():
     assert all(finding.evidence_references for finding in unresolved)
 
 
+def test_dep001_only_evaluates_dependency_relationship_types():
+    dependency = ArchitectureRelationship(
+        source_component_id="A",
+        target_component_id="B",
+        relationship_type="imports",
+        description="Unresolved static dependency.",
+        evidence_references=["EV1"],
+        status=RelationshipStatus.inferred,
+    )
+    integration = ArchitectureRelationship(
+        source_component_id="A",
+        target_component_id="external_payments",
+        relationship_type="integrates_with",
+        description="Inferred external integration.",
+        evidence_references=["EV1"],
+        status=RelationshipStatus.inferred,
+    )
+    structural = ArchitectureRelationship(
+        source_component_id="A",
+        target_component_id="B",
+        relationship_type="contains",
+        description="Inferred repository containment.",
+        evidence_references=["EV1"],
+        status=RelationshipStatus.inferred,
+    )
+    result = synthesis(components=[
+        ArchitectureComponent(
+            component_id="A",
+            name="A",
+            component_type="project",
+            description="A project with a clearly stated responsibility.",
+            evidence_references=["EV1"],
+        ),
+        ArchitectureComponent(
+            component_id="B",
+            name="B",
+            component_type="project",
+            description="A project with a clearly stated responsibility.",
+            evidence_references=["EV1"],
+        ),
+    ], relationships=[dependency, integration, structural])
+
+    review = ArchitectureReviewService().review(result)
+    dep001_relationships = [
+        finding.related_relationships[0]
+        for finding in review.findings
+        if finding.rule_id == "DEP-001"
+    ]
+    assert any("imports" in relationship for relationship in dep001_relationships)
+    assert all("integrates_with" not in relationship for relationship in dep001_relationships)
+    assert all("contains" not in relationship for relationship in dep001_relationships)
+
+
+def test_matching_analysis_makes_evidence_ids_authoritative():
+    result = representative_synthesis()
+    result.relationships.append(ArchitectureRelationship(
+        source_component_id="repository_repo",
+        target_component_id="project_api",
+        relationship_type="project_reference",
+        description="Unresolved dependency.",
+        evidence_references=["EV2"],
+        status=RelationshipStatus.inferred,
+        confidence=ConfidenceLevel.low,
+    ))
+    matching_analysis = RepositoryAnalysisResult(
+        analysis_id=result.original_analysis_id,
+        repository_name=result.repository_name,
+        source_type="local",
+        source_reference="fixture",
+        project_structure=ProjectStructureFinding(summary="Fixture structure."),
+        evidence=[evidence()],
+        summary="Fixture analysis.",
+    )
+    review = ArchitectureReviewService().review(result, matching_analysis)
+
+    dep001 = [finding for finding in review.findings if finding.rule_id == "DEP-001"]
+    invalid_dependency_finding = next(
+        finding for finding in dep001
+        if "project_reference" in finding.related_relationships[0]
+    )
+    assert invalid_dependency_finding.status == ArchitectureReviewFindingStatus.needs_investigation
+    assert invalid_dependency_finding.evidence_references == []
+    assert "EV2" not in invalid_dependency_finding.evidence_references
+
+
+def test_present_and_absent_analysis_evidence_references():
+    result = representative_synthesis()
+    result.relationships[0].evidence_references = ["EV1"]
+    matching_analysis = RepositoryAnalysisResult(
+        analysis_id=result.original_analysis_id,
+        repository_name=result.repository_name,
+        source_type="local",
+        source_reference="fixture",
+        project_structure=ProjectStructureFinding(summary="Fixture structure."),
+        evidence=[evidence()],
+        summary="Fixture analysis.",
+    )
+    present_review = ArchitectureReviewService().review(result, matching_analysis)
+    assert any(
+        "EV1" in strength.evidence_references
+        for strength in present_review.strengths
+    )
+
+    result.relationships[0].evidence_references = ["EV_MISSING"]
+    absent_review = ArchitectureReviewService().review(result, matching_analysis)
+    assert all(
+        "EV_MISSING" not in finding.evidence_references
+        for finding in absent_review.findings
+    )
+    assert all(
+        "EV_MISSING" not in ref
+        for strength in absent_review.strengths
+        for ref in strength.evidence_references
+    )
+
+
+def test_review_without_analysis_preserves_synthesis_evidence_and_warns():
+    result = representative_synthesis()
+    result.relationships.append(ArchitectureRelationship(
+        source_component_id="repository_repo",
+        target_component_id="project_api",
+        relationship_type="imports",
+        description="Unresolved dependency.",
+        evidence_references=["SYNTHESIS_EV"],
+        status=RelationshipStatus.inferred,
+        confidence=ConfidenceLevel.medium,
+    ))
+    review = ArchitectureReviewService().review(result)
+    dep001 = [finding for finding in review.findings if finding.rule_id == "DEP-001"]
+    assert dep001
+    assert all("SYNTHESIS_EV" in finding.evidence_references for finding in dep001)
+    assert any(
+        "Independent evidence validation was unavailable" in warning
+        for warning in review.warnings
+    )
+
+
 def test_integration_data_flow_and_positive_observations():
     result = representative_synthesis()
     result.external_systems = [
@@ -209,4 +346,3 @@ def test_matching_analysis_is_used_but_different_analysis_is_ignored():
     review = ArchitectureReviewService().review(result, other)
     assert review.review_metadata["analysis_used"] is False
     assert any("does not match" in warning for warning in review.warnings)
-

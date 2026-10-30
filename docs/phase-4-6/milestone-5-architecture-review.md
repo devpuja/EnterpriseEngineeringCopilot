@@ -50,11 +50,13 @@ proof that a runtime control is absent.
 
 ## Evidence and confidence
 
-The service validates synthesis evidence references against the optional analysis evidence and the
-synthesis's own referenced IDs. It does not invent components or evidence. Component confidence and
-relationship/data-flow confidence are preserved when available. Findings with no valid evidence use
-low confidence or an investigation status. Synthesis and analysis warnings/limitations remain visible
-in the result.
+When a matching `RepositoryAnalysisResult` is supplied, its evidence IDs are the authoritative
+evidence set. Synthesis references absent from that analysis are treated as invalid and are not
+included in findings as verified evidence. When no matching analysis is supplied, the review uses
+the synthesis's preserved evidence IDs and adds a warning that independent evidence validation was
+unavailable. It does not invent components or evidence. Component confidence and relationship/data-flow
+confidence are preserved when available. Findings with no valid evidence use low confidence or an
+investigation status. Synthesis and analysis warnings/limitations remain visible in the result.
 
 ## Severity and outcome
 

@@ -19,6 +19,11 @@ STRUCTURAL_TYPES = {
 }
 
 
+def is_dependency_relationship(relationship_type: str) -> bool:
+    normalized = relationship_type.strip().lower()
+    return normalized not in STRUCTURAL_TYPES
+
+
 class DeterministicArchitectureReviewChecks:
     def finding(
         self,
@@ -130,8 +135,11 @@ class DeterministicArchitectureReviewChecks:
 
         unresolved = [
             rel for rel in synthesis.relationships
-            if rel.status == RelationshipStatus.inferred
-            or "unresolved" in rel.description.lower()
+            if is_dependency_relationship(rel.relationship_type)
+            and (
+                rel.status == RelationshipStatus.inferred
+                or "unresolved" in rel.description.lower()
+            )
         ]
         for rel in unresolved:
             evidence = [ref for ref in rel.evidence_references if ref in valid_evidence_ids]

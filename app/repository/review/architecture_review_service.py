@@ -26,18 +26,8 @@ class ArchitectureReviewService:
     ) -> set[str]:
         ids: set[str] = set()
         if analysis is not None:
-            ids.update(item.evidence_id for item in analysis.evidence)
-            for field_items in (
-                analysis.projects,
-                analysis.application_entry_points,
-                analysis.dependencies,
-                analysis.api_endpoints,
-                analysis.database_findings,
-                analysis.external_integrations,
-                analysis.architectural_patterns,
-            ):
-                for item in field_items:
-                    ids.update(getattr(item, "evidence_references", getattr(item, "evidence", [])))
+            return {item.evidence_id for item in analysis.evidence}
+
         for component in synthesis.components:
             ids.update(component.evidence_references)
         for relationship in synthesis.relationships:
@@ -150,6 +140,11 @@ class ArchitectureReviewService:
             analysis = None
         else:
             warnings = []
+
+        if analysis is None:
+            warnings.append(
+                "Independent evidence validation was unavailable because no matching RepositoryAnalysisResult was supplied; synthesis evidence IDs are being preserved rather than independently verified."
+            )
 
         valid_evidence_ids = self._valid_evidence_ids(synthesis, analysis)
         findings = self.checks.run(synthesis, valid_evidence_ids)
