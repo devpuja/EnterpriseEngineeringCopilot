@@ -54,9 +54,9 @@ Milestone	| Name	| 	Scope	|  Status
 1	| 	Repository Access & Discovery	| Local/GitHub access, workspace isolation, file discovery and exclusions	| 	Complete
 2	| 	Repository Investigation & Architecture Analysis	| 	Static analysis of .NET, Python, Angular and React repositories; dependencies, APIs, databases and integrations	| 	Complete
 3	| 	Architecture Visualization	| 	Seven Mermaid architecture diagram types, evidence mapping and structural validation	| Complete
-4	| 	Architecture Synthesis	| 	Unified architecture model: components, relationships and data flows	| 	Next
-5	| 	Architecture Review	| Evaluate architecture findings, identify risks, gaps and improvement recommendations	| 	Planned
-6	| 	Report Export	| 	Markdown, HTML, PDF and DOCX	| 	Planned
+4	| 	Architecture Synthesis	| 	Unified architecture model: components, relationships and data flows	| 	Complete
+5	| 	Architecture Review	| Evaluate architecture findings, identify risks, gaps and improvement recommendations	| 	Complete
+6	| 	Report Export	| 	Markdown, HTML, PDF and DOCX	| 	Next
 7	| 	API & End-to-End Validation	| 	Repository analysis API, report download, error handling, integration and regression tests	| 	Planned
 
 Milestone details and acceptance criteria
