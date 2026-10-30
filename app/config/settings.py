@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     mcp_server_url: str = "http://127.0.0.1:8001/mcp"
     mcp_timeout_seconds: float = Field(default=15.0, gt=0, description="Timeout for MCP server requests in seconds.")
 
+    repository_workspace_root: str = "rag_data/repositories"
+    allowed_local_repository_roots: list[str] = Field(default_factory=list)
+    maximum_repository_size_bytes: int = 1_073_741_824
+    maximum_repository_file_size_bytes: int = 10_485_760
+    maximum_repository_file_count: int = 50_000
+    maximum_directory_traversal_depth: int = 20
+    workspace_retention_seconds: int = 86_400
+    git_executable_path: str = "git"
+    github_allowed_hosts: list[str] = Field(default_factory=lambda: ["github.com"])
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
@@ -63,6 +73,19 @@ def validate_rag_settings() -> None:
         raise ValueError("EMBEDDING_TIMEOUT_SECONDS must be positive.")
     if settings.embedding_max_retries < 0:
         raise ValueError("EMBEDDING_MAX_RETRIES must not be negative.")
+
+
+def validate_repository_settings() -> None:
+    if settings.maximum_repository_size_bytes <= 0:
+        raise ValueError("MAXIMUM_REPOSITORY_SIZE_BYTES must be positive.")
+    if settings.maximum_repository_file_size_bytes <= 0:
+        raise ValueError("MAXIMUM_REPOSITORY_FILE_SIZE_BYTES must be positive.")
+    if settings.maximum_repository_file_count <= 0:
+        raise ValueError("MAXIMUM_REPOSITORY_FILE_COUNT must be positive.")
+    if settings.maximum_directory_traversal_depth < 0:
+        raise ValueError("MAXIMUM_DIRECTORY_TRAVERSAL_DEPTH must not be negative.")
+    if settings.workspace_retention_seconds <= 0:
+        raise ValueError("WORKSPACE_RETENTION_SECONDS must be positive.")
 
 
 def validate_model_settings() -> None:
