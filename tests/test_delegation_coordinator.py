@@ -3,6 +3,7 @@ from typing import Any, cast
 from types import SimpleNamespace
 
 import pytest
+import json
 
 from app.api.schemas import (
     ArchitectureDesign,
@@ -47,11 +48,18 @@ def make_response(with_review: bool = True) -> ArchitectureResponse:
 
 
 class FakeParentAgent:
-    def __init__(self, *, tools: list[Any], response: Any) -> None:
+    def __init__(
+        self,
+        *,
+        tools: list[Any],
+        response: Any,
+        run_callback: Any | None = None,
+    ) -> None:
         self.tools = tools
         self.response = response
         self.prompt: str | None = None
         self.options: dict[str, Any] | None = None
+        self.run_callback = run_callback
 
     async def run(
         self,
@@ -62,6 +70,8 @@ class FakeParentAgent:
     ) -> Any:
         self.prompt = prompt
         self.options = options
+        if self.run_callback is not None:
+            await self.run_callback()
         return SimpleNamespace(value=self.response)
 
 
@@ -72,21 +82,51 @@ async def test_delegation_registers_specialist_tools(
     expected = make_response()
     created: dict[str, Any] = {}
 
+    class FakeRequirementsAgent:
+        async def analyze(self, requirements: str) -> RequirementAnalysis:
+            return expected.requirements_analysis
+
+    class FakeArchitectureAgent:
+        async def design(self, **kwargs: Any) -> ArchitectureResponse:
+            return expected.model_copy(update={"review": None})
+
+    class FakeReviewAgent:
+        async def review(
+            self,
+            response: ArchitectureResponse,
+        ) -> ArchitectureReview:
+            return expected.review
+
+    orchestrator_holder: dict[str, ArchitectureOrchestrator] = {}
+
     def fake_agent_factory(**kwargs: Any) -> FakeParentAgent:
         created.update(kwargs)
+
+        async def run_tools() -> None:
+            orchestrator = orchestrator_holder["orchestrator"]
+            design_json = await orchestrator._delegation_tools.design_architecture(
+                requirements="Build a document processing API.",
+                model_provider="openai",
+                requirements_analysis_json=expected.requirements_analysis.model_dump_json(),
+            )
+            architecture_id = json.loads(design_json)["architecture_id"]
+            await orchestrator._delegation_tools.review_architecture(architecture_id)
+
         return FakeParentAgent(
             tools=kwargs["tools"],
             response=expected,
+            run_callback=run_tools,
         )
 
     monkeypatch.setattr(module, "Agent", fake_agent_factory)
     monkeypatch.setattr(module, "create_model_client", lambda: object())
 
     orchestrator = ArchitectureOrchestrator(
-        requirements_agent=cast(Any, object()),
-        architecture_agent=cast(Any, object()),
-        architecture_review_agent=cast(Any, object()),
+        requirements_agent=cast(Any, FakeRequirementsAgent()),
+        architecture_agent=cast(Any, FakeArchitectureAgent()),
+        architecture_review_agent=cast(Any, FakeReviewAgent()),
     )
+    orchestrator_holder["orchestrator"] = orchestrator
 
     result = await orchestrator.design_with_delegation(
         "Build a document processing API.",
@@ -125,7 +165,7 @@ async def test_delegation_rejects_architecture_without_review(
         architecture_review_agent=cast(Any, object()),
     )
 
-    with pytest.raises(RuntimeError, match="without a review"):
+    with pytest.raises(RuntimeError, match="review"):
         await orchestrator.design_with_delegation(
             "Build a document processing API.",
             "openai",
@@ -133,7 +173,7 @@ async def test_delegation_rejects_architecture_without_review(
 
 
 @pytest.mark.asyncio
-async def test_delegation_fallback_reviews_returned_architecture(
+async def test_delegation_does_not_fallback_to_unverified_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = make_response(with_review=False)
@@ -145,10 +185,13 @@ async def test_delegation_fallback_reviews_returned_architecture(
         )
 
     class FakeReviewAgent:
+        called = False
+
         async def review(
             self,
             response: ArchitectureResponse,
         ) -> ArchitectureReview:
+            self.called = True
             return ArchitectureReview(
                 summary="Fallback review completed.",
                 findings=[],
@@ -158,16 +201,17 @@ async def test_delegation_fallback_reviews_returned_architecture(
     monkeypatch.setattr(module, "Agent", fake_agent_factory)
     monkeypatch.setattr(module, "create_model_client", lambda: object())
 
+    review_agent = FakeReviewAgent()
     orchestrator = ArchitectureOrchestrator(
         requirements_agent=cast(Any, object()),
         architecture_agent=cast(Any, object()),
-        architecture_review_agent=cast(Any, FakeReviewAgent()),
+        architecture_review_agent=cast(Any, review_agent),
     )
 
-    result = await orchestrator.design_with_delegation(
-        "Build a document processing API.",
-        "openai",
-    )
+    with pytest.raises(RuntimeError, match="review"):
+        await orchestrator.design_with_delegation(
+            "Build a document processing API.",
+            "openai",
+        )
 
-    assert result.review is not None
-    assert result.review.summary == "Fallback review completed."
+    assert review_agent.called is False

@@ -135,6 +135,19 @@ async def design_architecture_delegated(
             detail="The delegation coordinator returned invalid data.",
         ) from exc
 
+    except RuntimeError as exc:
+        logger.warning(
+            "event=delegated_architecture_generation_review_failed "
+            "request_id=%s review_status=failed error_type=%s error=%s",
+            request_id,
+            type(exc).__name__,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
     except Exception as exc:
         logger.exception(
             "event=delegated_architecture_generation_failed "

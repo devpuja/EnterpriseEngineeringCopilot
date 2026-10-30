@@ -7,7 +7,10 @@ as tools. They do not replace the current workflow orchestrator.
 
 import json
 import logging
+import time
+from dataclasses import dataclass
 from typing import Annotated, Any
+from uuid import uuid4
 
 from agent_framework import tool
 from pydantic import Field, ValidationError
@@ -23,6 +26,13 @@ from app.api.schemas import (
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ArchitectureResultEntry:
+    architecture: ArchitectureResponse
+    created_at: float
+    review: ArchitectureReview | None = None
 
 
 class AgentDelegationTools:
@@ -42,9 +52,14 @@ class AgentDelegationTools:
         self._requirements_agent = requirements_agent
         self._architecture_agent = architecture_agent
         self._architecture_review_agent = architecture_review_agent
-        self._reviewed_responses: dict[str, ArchitectureReview] = {}
         self._last_requirements: str | None = None
-        self._last_architecture_response: ArchitectureResponse | None = None
+        self._architecture_results: dict[str, ArchitectureResultEntry] = {}
+        self._retention_seconds = 30 * 60
+        self._max_entries = 100
+        self._review_invocation_count = 0
+        self._last_architecture_id: str | None = None
+        self._reviewed_architecture_id: str | None = None
+        self._requirements_results: dict[str, tuple[RequirementAnalysis, float]] = {}
 
     @staticmethod
     def _architecture_key(response: ArchitectureResponse) -> str:
@@ -52,13 +67,100 @@ class AgentDelegationTools:
 
     def attach_review(self, response: ArchitectureResponse) -> ArchitectureResponse:
         """Attach a review captured by the review specialist, when available."""
-        review = self._reviewed_responses.get(self._architecture_key(response))
-        if review is not None:
-            return response.model_copy(update={"review": review})
+        for entry in reversed(list(self._architecture_results.values())):
+            if entry.architecture == response.model_copy(update={"review": None}):
+                if entry.review is not None:
+                    return response.model_copy(update={"review": entry.review})
         return response
+
+    def _cleanup_result_store(self) -> None:
+        now = time.monotonic()
+        expired_ids = [
+            architecture_id
+            for architecture_id, entry in self._architecture_results.items()
+            if now - entry.created_at > self._retention_seconds
+        ]
+        for architecture_id in expired_ids:
+            del self._architecture_results[architecture_id]
+
+        while len(self._architecture_results) > self._max_entries:
+            oldest_id = min(
+                self._architecture_results,
+                key=lambda item: self._architecture_results[item].created_at,
+            )
+            del self._architecture_results[oldest_id]
+
+    def get_architecture(self, architecture_id: str) -> ArchitectureResponse:
+        self._cleanup_result_store()
+        entry = self._architecture_results.get(architecture_id)
+        if entry is None:
+            raise ValueError(
+                f"Unknown or expired architecture_id: {architecture_id}"
+            )
+        return entry.architecture
+
+    def get_requirements_analysis(
+        self,
+        requirements_id: str,
+    ) -> RequirementAnalysis:
+        entry = self._requirements_results.get(requirements_id)
+        if entry is None:
+            raise ValueError(
+                f"Unknown or expired requirements_id: {requirements_id}"
+            )
+        analysis, created_at = entry
+        if time.monotonic() - created_at > self._retention_seconds:
+            del self._requirements_results[requirements_id]
+            raise ValueError(
+                f"Unknown or expired requirements_id: {requirements_id}"
+            )
+        return analysis
+
+    def get_verified_review(
+        self,
+        architecture_id: str,
+    ) -> ArchitectureReview:
+        self._cleanup_result_store()
+        entry = self._architecture_results.get(architecture_id)
+        if entry is None:
+            raise RuntimeError(
+                f"Unknown or expired architecture_id: {architecture_id}"
+            )
+        if entry.review is None:
+            raise RuntimeError(
+                "Architecture review was not completed for architecture_id "
+                f"{architecture_id}"
+            )
+        return entry.review
+
+    def get_verified_architecture_response(self) -> ArchitectureResponse:
+        self._cleanup_result_store()
+        architecture_id = self._reviewed_architecture_id
+        if architecture_id is None or architecture_id != self._last_architecture_id:
+            raise RuntimeError(
+                "Delegated workflow does not contain a genuine review for "
+                "the latest architecture."
+            )
+        entry = self._architecture_results.get(architecture_id)
+        if entry is None or entry.review is None:
+            raise RuntimeError(
+                "Unknown architecture review state; the review may be missing "
+                "or expired."
+            )
+        architecture = entry.architecture.model_copy(
+            update={"review": entry.review}
+        )
+        logger.info(
+            "event=delegated_review_verified "
+            "architecture_id=%s review_status=completed findings=%d",
+            architecture_id,
+            len(entry.review.findings),
+        )
+        return architecture
 
     async def analyze_requirements(self, requirements: str) -> str:
         """Analyze requirements and return validated RequirementAnalysis JSON."""
+        started_at = time.perf_counter()
         if not requirements or not requirements.strip():
             raise ValueError("requirements must not be empty")
         if len(requirements) > 12_000:
@@ -68,21 +170,46 @@ class AgentDelegationTools:
             analysis = await self._requirements_agent.analyze(requirements.strip())
         except Exception:
             logger.exception(
-                "event=agent_delegation_failed specialist=requirements_analysis"
+                "event=agent_delegation_failed specialist=requirements_analysis "
+                "duration_ms=%.2f",
+                round((time.perf_counter() - started_at) * 1000, 2),
             )
             raise
 
         self._last_requirements = requirements.strip()
-        logger.info("event=agent_delegation_completed specialist=requirements_analysis")
-        return analysis.model_dump_json()
+        requirements_id = str(uuid4())
+        now = time.monotonic()
+        self._requirements_results[requirements_id] = (analysis, now)
+        expired_ids = [
+            item_id
+            for item_id, (_, created_at) in self._requirements_results.items()
+            if now - created_at > self._retention_seconds
+        ]
+        for item_id in expired_ids:
+            del self._requirements_results[item_id]
+        logger.info(
+            "event=agent_delegation_completed specialist=requirements_analysis "
+            "requirements_id=%s duration_ms=%.2f",
+            requirements_id,
+            round((time.perf_counter() - started_at) * 1000, 2),
+        )
+        return json.dumps({
+            "requirements_id": requirements_id,
+            "functional_requirement_count": len(
+                analysis.functional_requirements
+            ),
+            "next_step": "design_software_architecture",
+        })
 
     async def design_architecture(
         self,
         requirements: Any = "",
         model_provider: Any = "",
         requirements_analysis_json: Any = "",
+        requirements_id: Any = "",
     ) -> str:
         """Design architecture, optionally using JSON from requirements analysis."""
+        started_at = time.perf_counter()
         logger.info(
             "event=agent_delegation_input_received "
             "specialist=architecture_design requirements_length=%d "
@@ -119,22 +246,36 @@ class AgentDelegationTools:
 
         analysis: RequirementAnalysis | None = None
         try:
-            if isinstance(requirements_analysis_json, RequirementAnalysis):
+            if isinstance(requirements_id, str) and requirements_id.strip():
+                analysis = self.get_requirements_analysis(
+                    requirements_id.strip()
+                )
+            elif isinstance(requirements_analysis_json, RequirementAnalysis):
                 analysis = requirements_analysis_json
             elif isinstance(requirements_analysis_json, dict):
-                analysis = RequirementAnalysis.model_validate(
-                    requirements_analysis_json
-                )
+                if "requirements_id" in requirements_analysis_json:
+                    analysis = self.get_requirements_analysis(
+                        str(requirements_analysis_json["requirements_id"])
+                    )
+                else:
+                    # Backward compatibility for old/direct callers only.
+                    analysis = RequirementAnalysis.model_validate(
+                        requirements_analysis_json
+                    )
             elif requirements_analysis_json is None:
                 analysis = None
             elif isinstance(requirements_analysis_json, str):
                 analysis_text = requirements_analysis_json.strip()
                 if analysis_text:
-                    # Some model/tool handoffs JSON-encode a JSON string twice.
                     normalized: Any = json.loads(analysis_text)
                     if isinstance(normalized, str):
                         normalized = json.loads(normalized)
-                    analysis = RequirementAnalysis.model_validate(normalized)
+                    if isinstance(normalized, dict) and "requirements_id" in normalized:
+                        analysis = self.get_requirements_analysis(
+                            str(normalized["requirements_id"])
+                        )
+                    else:
+                        analysis = RequirementAnalysis.model_validate(normalized)
             else:
                 raise TypeError(
                     "requirements_analysis_json must be a JSON string, object, "
@@ -158,77 +299,86 @@ class AgentDelegationTools:
             )
         except Exception:
             logger.exception(
-                "event=agent_delegation_failed specialist=architecture_design"
+                "event=agent_delegation_failed specialist=architecture_design "
+                "duration_ms=%.2f",
+                round((time.perf_counter() - started_at) * 1000, 2),
             )
             raise
 
         # A new architecture must not inherit a prior review.
         response = response.model_copy(update={"review": None})
-        self._last_architecture_response = response
-        logger.info("event=agent_delegation_completed specialist=architecture_design")
-        return response.model_dump_json()
+        self._cleanup_result_store()
+        architecture_id = str(uuid4())
+        self._architecture_results[architecture_id] = ArchitectureResultEntry(
+            architecture=response,
+            created_at=time.monotonic(),
+        )
+        self._last_architecture_id = architecture_id
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "event=agent_delegation_completed specialist=architecture_design "
+            "architecture_id=%s duration_ms=%.2f",
+            architecture_id,
+            duration_ms,
+        )
+        return json.dumps({
+            "architecture_id": architecture_id,
+            "summary": response.architecture.summary,
+            "next_step": "review_software_architecture",
+        })
 
     async def review_architecture(
         self,
-        architecture_response_json: Any = "",
+        architecture_id: Any = "",
     ) -> str:
-        """Review an architecture JSON document and return review JSON."""
-        response: ArchitectureResponse | None = None
-        parse_error: ValidationError | json.JSONDecodeError | TypeError | None = None
+        """Review the architecture stored under an architecture ID."""
+        if not isinstance(architecture_id, str) or not architecture_id.strip():
+            raise ValueError("architecture_id is required")
 
-        if isinstance(architecture_response_json, ArchitectureResponse):
-            response = architecture_response_json
-        elif isinstance(architecture_response_json, dict):
-            try:
-                response = ArchitectureResponse.model_validate(
-                    architecture_response_json
-                )
-            except ValidationError as exc:
-                parse_error = exc
-        elif isinstance(architecture_response_json, str):
-            text = architecture_response_json.strip()
-            if text.startswith("```"):
-                text = text.strip("`").strip()
-                if text.startswith("json"):
-                    text = text[4:].strip()
-
-            if text:
-                try:
-                    normalized: Any = json.loads(text)
-                    if isinstance(normalized, str):
-                        normalized = json.loads(normalized)
-                    response = ArchitectureResponse.model_validate(normalized)
-                except (json.JSONDecodeError, ValidationError, TypeError) as exc:
-                    parse_error = exc  # type: ignore[assignment]
-
-        if response is None and self._last_architecture_response is not None:
-            logger.warning(
-                "event=agent_delegation_json_recovery "
-                "specialist=architecture_review "
-                "reason=invalid_or_missing_architecture_json"
-            )
-            response = self._last_architecture_response
-
-        if response is None:
-            logger.exception(
-                "event=agent_delegation_input_validation_failed "
-                "specialist=architecture_review "
-                "field=architecture_response_json"
-            )
-            raise ValueError(
-                "architecture_response_json is not a valid ArchitectureResponse"
-            ) from parse_error
+        architecture_id = architecture_id.strip()
+        started_at = time.perf_counter()
+        logger.info(
+            "event=agent_delegation_started specialist=architecture_review "
+            "architecture_id=%s",
+            architecture_id,
+        )
+        response = self.get_architecture(architecture_id)
 
         try:
             review = await self._architecture_review_agent.review(response)
         except Exception:
             logger.exception(
-                "event=agent_delegation_failed specialist=architecture_review"
+                "event=agent_delegation_failed specialist=architecture_review "
+                "architecture_id=%s duration_ms=%.2f",
+                architecture_id,
+                round((time.perf_counter() - started_at) * 1000, 2),
             )
             raise
 
-        self._reviewed_responses[self._architecture_key(response)] = review
-        logger.info("event=agent_delegation_completed specialist=architecture_review")
+        if not isinstance(review, ArchitectureReview):
+            raise RuntimeError(
+                "Architecture Review specialist returned an invalid "
+                "ArchitectureReview."
+            )
+
+        entry = self._architecture_results[architecture_id]
+        self._architecture_results[architecture_id] = ArchitectureResultEntry(
+            architecture=entry.architecture,
+            created_at=entry.created_at,
+            review=review,
+        )
+        self._reviewed_architecture_id = architecture_id
+        self._review_invocation_count += 1
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "event=agent_delegation_completed specialist=architecture_review "
+            "architecture_id=%s findings=%d recommendation=%s "
+            "duration_ms=%.2f",
+            architecture_id,
+            len(review.findings),
+            review.approval_recommendation,
+            duration_ms,
+        )
         return review.model_dump_json()
 
     def build_tools(self) -> list[Any]:
@@ -238,8 +388,8 @@ class AgentDelegationTools:
             name="analyze_software_requirements",
             description=(
                 "Delegate requirements classification to the Requirements Analysis "
-                "specialist. Returns a JSON RequirementAnalysis with functional and "
-                "non-functional requirements, assumptions, open questions, and constraints."
+                "specialist. Returns a compact requirements_id envelope. Use that ID "
+                "when calling design_software_architecture."
             ),
             approval_mode="never_require",
         )
@@ -256,7 +406,8 @@ class AgentDelegationTools:
             description=(
                 "Delegate architecture design to the Architecture specialist. Pass the "
                 "original requirements, a model provider name, and optionally the JSON "
-                "output from analyze_software_requirements. Returns ArchitectureResponse JSON."
+                "output or requirements_id from analyze_software_requirements. Returns a compact JSON "
+                "object containing architecture_id, summary, and next_step."
             ),
             approval_mode="never_require",
         )
@@ -273,34 +424,40 @@ class AgentDelegationTools:
                 Any,
                 Field(description="Optional JSON output from analyze_software_requirements."),
             ] = "",
+            requirements_id: Annotated[
+                Any,
+                Field(description="Optional requirements_id returned by analyze_software_requirements."),
+            ] = "",
         ) -> str:
             return await self.design_architecture(
                 requirements,
                 model_provider,
                 requirements_analysis_json,
+                requirements_id,
             )
 
         @tool(
             name="review_software_architecture",
             description=(
                 "Delegate architecture review to the Architecture Review specialist. "
-                "Input must be the JSON output from design_software_architecture. "
-                "Returns ArchitectureReview JSON with findings and a recommendation."
+                "Pass only the architecture_id returned by design_software_architecture. "
+                "Never pass or reconstruct the architecture JSON. Returns the validated "
+                "ArchitectureReview with findings and a recommendation."
             ),
             approval_mode="never_require",
         )
         async def review_software_architecture(
-            architecture_response_json: Annotated[
-                Any,
+            architecture_id: Annotated[
+                str,
                 Field(
                     description=(
-                        "Optional ArchitectureResponse JSON. When omitted or "
-                        "malformed, the review tool uses the cached design."
+                        "The architecture_id returned by "
+                        "design_software_architecture."
                     )
                 ),
-            ] = "",
+            ],
         ) -> str:
-            return await self.review_architecture(architecture_response_json)
+            return await self.review_architecture(architecture_id)
 
         return [
             analyze_software_requirements,

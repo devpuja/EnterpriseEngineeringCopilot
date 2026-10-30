@@ -2,6 +2,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Any, Never
+import time
 
 from agent_framework import (
     Agent,
@@ -319,17 +320,17 @@ class ArchitectureOrchestrator:
                     "1) analyze_software_requirements; "
                     "2) design_software_architecture, passing the requirements "
                     "analysis returned by step 1; "
-                    "3) review_software_architecture, passing the architecture. "
+                    "3) review_software_architecture, passing only the "
+                    "architecture_id returned by step 2. "
                     "For design_software_architecture, pass the original requirements "
-                    "as a string, the configured provider as a string, and the full "
-                    "JSON string from step 1 as requirements_analysis_json. "
-                    "For review_software_architecture, pass the complete JSON string "
-                    "returned by step 2. If the JSON is too large to transfer safely, "
-                    "invoke review_software_architecture with no argument; the tool "
-                    "will review the cached architecture from step 2. "
-                    "Return a complete ArchitectureResponse JSON object, including "
-                    "the review returned by the review specialist. Do not invent "
-                    "tool results. If a tool fails, report the failure. "
+                    "as a string, the configured provider as a string, and "
+                    "requirements_id returned by step 1, not requirement analysis JSON. "
+                    "Read architecture_id from the compact design result. Never "
+                    "reconstruct, serialize, or resend the complete ArchitectureResponse. "
+                    "Pass the architecture_id directly to review_software_architecture. "
+                    "Use only the actual review returned by that tool. Never invent "
+                    "review findings or approval recommendations. Never claim success "
+                    "if a specialist tool failed. "
                     "Do not invoke tools recursively."
                 ),
                 tools=self.build_delegation_tools(),
@@ -356,6 +357,16 @@ class ArchitectureOrchestrator:
 
         provider = model_provider.strip().lower()
 
+        # Give every request its own tools instance and result store.  The tools
+        # remain shared within this parent run so design/review retain the exact
+        # same in-process architecture object.
+        self._delegation_tools = AgentDelegationTools(
+            requirements_agent=self._requirements_agent,
+            architecture_agent=self._architecture_agent,
+            architecture_review_agent=self._architecture_review_agent,
+        )
+        self._delegation_agent = None
+
         prompt = (
             "Coordinate the specialist tools to produce a reviewed software "
             "architecture.\n"
@@ -366,44 +377,30 @@ class ArchitectureOrchestrator:
             f"<requirements>\n{requirements.strip()}\n</requirements>"
         )
 
-        result = await self._get_delegation_agent().run(
-            prompt,
-            options={"response_format": ArchitectureResponse},
-        )
-
-        value = getattr(result, "value", None)
-
-        if isinstance(value, ArchitectureResponse):
-            response = value
-        elif isinstance(value, dict):
-            response = ArchitectureResponse.model_validate(value)
-        else:
-            response_text = getattr(result, "text", None)
-
-            if not isinstance(response_text, str) or not response_text.strip():
-                raise RuntimeError(
-                    "The delegation coordinator returned no structured "
-                    "architecture."
-                )
-
-            response = ArchitectureResponse.model_validate_json(
-                response_text
+        coordinator_started_at = time.perf_counter()
+        try:
+            await self._get_delegation_agent().run(
+                prompt,
+                options={},
+            )
+        except Exception:
+            logger.exception(
+                "event=maf_coordinator_failed "
+                "duration_ms=%.2f",
+                round((time.perf_counter() - coordinator_started_at) * 1000, 2),
+            )
+            raise
+        finally:
+            logger.info(
+                "event=maf_coordinator_completed "
+                "duration_ms=%.2f",
+                round((time.perf_counter() - coordinator_started_at) * 1000, 2),
             )
 
-        if self._delegation_tools is not None and response.review is None:
-            response = self._delegation_tools.attach_review(response)
+        if self._delegation_tools is None:
+            raise RuntimeError("Delegation result store is unavailable.")
 
-        if response.review is None and callable(
-            getattr(self._architecture_review_agent, "review", None)
-        ):
-            review = await self._architecture_review_agent.review(response)
-            response = response.model_copy(update={"review": review})
-
-        if response.review is None:
-            raise RuntimeError(
-                "The delegation coordinator returned an architecture "
-                "without a review."
-            )
+        response = self._delegation_tools.get_verified_architecture_response()
 
         if response.model_provider.lower() != provider:
             logger.warning(
@@ -411,8 +408,12 @@ class ArchitectureOrchestrator:
                 provider,
                 response.model_provider.lower(),
             )
-
-        logger.info("event=maf_agent_delegation_completed")
+        logger.info(
+            "event=maf_agent_delegation_completed review_status=completed "
+            "findings=%d recommendation=%s",
+            len(response.review.findings) if response.review else 0,
+            response.review.approval_recommendation if response.review else "missing",
+        )
 
         return response
 
