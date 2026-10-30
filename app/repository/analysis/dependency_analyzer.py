@@ -29,19 +29,56 @@ class DependencyAnalyzer:
             normalized = PurePosixPath(path)
             stem = normalized.with_suffix("").as_posix()
             module_names[stem.replace("/", ".")] = path
+            if normalized.name == "__init__.py":
+                package = normalized.parent.as_posix().replace("/", ".")
+                if package and package != ".":
+                    module_names[package] = path
 
         for path, file in python_files.items():
             text = reader.read_text(snapshot, file) or ""
             for line_number, line in enumerate(text.splitlines(), 1):
-                match = re.match(r"\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*))", line)
+                match = re.match(
+                    r"\s*(?:from\s+([.\w]+)\s+import|import\s+([A-Za-z_][\w.]*))",
+                    line,
+                )
                 if not match:
                     continue
-                module = (match.group(1) or match.group(2)).split(".", 1)[0]
-                candidates = [key for key in module_names if key == module or key.startswith(module + ".")]
-                if candidates:
-                    target = module_names[min(candidates, key=len)]
-                    ref = evidence.add(path, EvidenceCategory.dependency, f"Internal Python import of {module}.", symbol=module, line_number=line_number)
-                    findings.append(DependencyFinding(source=path, target=target, dependency_type="Python import", resolved=True, evidence_references=[ref.evidence_id], confidence=ConfidenceLevel.high))
+                imported = match.group(1) or match.group(2)
+                source_module = PurePosixPath(path).with_suffix("").as_posix().replace("/", ".")
+                source_parts = source_module.split(".")
+                if source_module.endswith(".__init__"):
+                    source_parts = source_module.split(".")[:-1]
+                elif PurePosixPath(path).stem != "__init__":
+                    source_parts = source_parts[:-1]
+
+                if imported.startswith("."):
+                    dot_count = len(imported) - len(imported.lstrip("."))
+                    remainder = imported.lstrip(".")
+                    if dot_count == 1:
+                        package_parts = source_parts
+                    else:
+                        package_parts = source_parts[: max(0, len(source_parts) - (dot_count - 1))]
+                    resolved_module = ".".join(part for part in package_parts + ([remainder] if remainder else []) if part)
+                else:
+                    resolved_module = imported
+
+                target = module_names.get(resolved_module)
+                if target:
+                    ref = evidence.add(
+                        path,
+                        EvidenceCategory.dependency,
+                        f"Internal Python import of {resolved_module}.",
+                        symbol=resolved_module,
+                        line_number=line_number,
+                    )
+                    findings.append(DependencyFinding(
+                        source=path,
+                        target=target,
+                        dependency_type="Python import",
+                        resolved=True,
+                        evidence_references=[ref.evidence_id],
+                        confidence=ConfidenceLevel.high,
+                    ))
 
         for file in snapshot.files:
             if file.file_name != "package.json":

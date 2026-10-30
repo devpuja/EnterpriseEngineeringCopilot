@@ -30,6 +30,8 @@ async def test_dotnet_web_api_analysis(tmp_path):
     names = {item.name for item in result.technology_stack}
     assert "ASP.NET Core" in names
     assert "Entity Framework Core" in names
+    assert sum(item.name == "ASP.NET Core" for item in result.technology_stack) == 1
+    assert sum(item.name == "Entity Framework Core" for item in result.technology_stack) == 1
     assert any(endpoint.exposure == "exposed" for endpoint in result.api_endpoints)
     assert any("DbContext" in finding.detail for finding in result.database_findings) or result.database_findings
     assert all("source_reference" not in evidence.relative_path for evidence in result.evidence)
@@ -46,6 +48,10 @@ async def test_python_fastapi_and_mixed_detection(tmp_path):
     })
     names = {item.name for item in result.technology_stack}
     assert {"FastAPI", "SQLAlchemy", "React", "Python"} <= names
+    assert sum(item.name == "FastAPI" for item in result.technology_stack) == 1
+    assert sum(item.name == "SQLAlchemy" for item in result.technology_stack) == 1
+    assert sum(item.name == "React" for item in result.technology_stack) == 1
+    assert sum(item.name == "Python" for item in result.technology_stack) == 1
     assert any(endpoint.exposure == "exposed" and endpoint.route == "/items/{item_id}" for endpoint in result.api_endpoints)
     assert any(endpoint.exposure == "consumed" for endpoint in result.api_endpoints)
     assert any(finding.technology == "SQLAlchemy" for finding in result.database_findings)
@@ -72,3 +78,92 @@ async def test_inconclusive_repository_is_explicit(tmp_path):
     assert result.architectural_patterns
     assert result.architectural_patterns[0].name == "Not determined"
     assert result.project_structure.summary
+
+
+@pytest.mark.asyncio
+async def test_dotnet_controller_routes_are_combined(tmp_path):
+    result, _ = await analyze_source(tmp_path, {
+        "Controllers/OrdersController.cs": (
+            '[Route("api/orders")]\n'
+            "public class OrdersController : ControllerBase {\n"
+            '[HttpGet("{id}")]\n'
+            "public object Get(int id) => new { id };\n"
+            "}"
+        ),
+    })
+    assert any(
+        endpoint.framework == "ASP.NET Core"
+        and endpoint.route == "/api/orders/{id}"
+        for endpoint in result.api_endpoints
+    )
+
+
+@pytest.mark.asyncio
+async def test_dotnet_minimal_api_methods_are_detected(tmp_path):
+    result, _ = await analyze_source(tmp_path, {
+        "Program.cs": (
+            'var app = WebApplication.Create();\n'
+            'app.MapGet("/health", () => "ok");\n'
+            'app.MapPost("/orders", () => "ok");\n'
+            'app.MapPut("/orders/{id}", () => "ok");\n'
+            'app.MapDelete("/orders/{id}", () => "ok");\n'
+            'app.MapPatch("/orders/{id}", () => "ok");\n'
+            'app.MapGet(GetRouteName(), () => "dynamic");\n'
+        ),
+    })
+    endpoints = {
+        (endpoint.method, endpoint.route)
+        for endpoint in result.api_endpoints
+        if endpoint.framework == "ASP.NET Core"
+    }
+    assert endpoints >= {
+        ("GET", "/health"),
+        ("POST", "/orders"),
+        ("PUT", "/orders/{id}"),
+        ("DELETE", "/orders/{id}"),
+        ("PATCH", "/orders/{id}"),
+    }
+    for endpoint in result.api_endpoints:
+        if endpoint.framework == "ASP.NET Core":
+            assert endpoint.relative_path == "Program.cs"
+            assert endpoint.evidence_references
+            assert any(
+                evidence.evidence_id in endpoint.evidence_references
+                for evidence in result.evidence
+            )
+
+
+@pytest.mark.asyncio
+async def test_python_relative_and_absolute_imports_resolve(tmp_path):
+    result, _ = await analyze_source(tmp_path, {
+        "app/main.py": "from .database import engine",
+        "app/database.py": "engine = object()",
+        "app/controllers/api.py": "from ..services.user_service import UserService",
+        "app/services/user_service.py": "class UserService: pass",
+        "app/unresolved.py": "from .missing_module import Missing",
+        "consumer.py": "import app.services.user_service",
+    })
+    resolved = {(item.source, item.target) for item in result.dependencies if item.resolved}
+    assert ("app/main.py", "app/database.py") in resolved
+    assert ("app/controllers/api.py", "app/services/user_service.py") in resolved
+    assert ("consumer.py", "app/services/user_service.py") in resolved
+    assert not any(item.source == "app/unresolved.py" for item in result.dependencies)
+
+
+@pytest.mark.asyncio
+async def test_misleading_pattern_directory_names_are_inconclusive(tmp_path):
+    result, _ = await analyze_source(tmp_path, {
+        "domain/README.md": "Domain folder placeholder.",
+        "application/README.md": "Application folder placeholder.",
+        "infrastructure/README.md": "Infrastructure folder placeholder.",
+        "presentation/README.md": "Presentation folder placeholder.",
+        "controllers/empty.txt": "placeholder",
+        "models/empty.txt": "placeholder",
+        "views/empty.txt": "placeholder",
+        "repositories/empty.txt": "placeholder",
+    })
+    pattern_names = {item.name for item in result.architectural_patterns}
+    assert "Not determined" in pattern_names
+    assert "Layered Architecture" not in pattern_names
+    assert "MVC" not in pattern_names
+    assert "Repository Pattern" not in pattern_names

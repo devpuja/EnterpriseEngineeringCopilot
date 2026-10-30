@@ -16,16 +16,53 @@ class APIAnalyzer:
                 continue
             lines = text.splitlines()
             if file.extension.lower() == ".cs":
+                class_route = ""
+                pending_class_route = ""
                 for line_number, line in enumerate(lines, 1):
                     route_match = re.search(r'\[Route(?:Attribute)?\s*\(\s*"([^"]*)"', line, re.IGNORECASE)
-                    method_match = re.search(r'\[(Http(Get|Post|Put|Delete|Patch))(?:Attribute)?(?:\s*\(\s*"([^"]*)"\s*\))?', line, re.IGNORECASE)
+                    method_match = re.search(
+                        r'\[Http(Get|Post|Put|Delete|Patch)(?:Attribute)?(?:\s*\(\s*"([^"]*)"\s*\))?\]',
+                        line,
+                        re.IGNORECASE,
+                    )
+                    if route_match and not method_match:
+                        pending_class_route = route_match.group(1)
+                    if re.search(r"\b(?:class\s+\w+)", line, re.IGNORECASE):
+                        if pending_class_route:
+                            class_route = pending_class_route
+                            pending_class_route = ""
                     if method_match:
                         method = method_match.group(1).upper()
                         route = method_match.group(2) or ""
-                        class_route = next((m.group(1) for m in re.findall(r'\[Route(?:Attribute)?\s*\(\s*"([^"]*)"', text[:text.find(line) if text.find(line) >= 0 else 0])), "")
                         full_route = "/" + "/".join(part.strip("/") for part in (class_route, route) if part.strip("/"))
                         ref = evidence.add(file.relative_path, EvidenceCategory.api, f"{method} ASP.NET Core route declared.", line_number=line_number, confidence=ConfidenceLevel.high)
                         findings.append(ApiEndpointFinding(exposure="exposed", method=method, route=full_route, relative_path=file.relative_path, framework="ASP.NET Core", evidence_references=[ref.evidence_id], confidence=ConfidenceLevel.high))
+                    minimal_match = re.search(
+                        r'\bMap(Get|Post|Put|Delete|Patch)\s*\(\s*r?["\']([^"\']+)["\']',
+                        line,
+                        re.IGNORECASE,
+                    )
+                    if minimal_match:
+                        method = minimal_match.group(1).upper()
+                        route = minimal_match.group(2)
+                        if not route.startswith("/"):
+                            route = "/" + route
+                        ref = evidence.add(
+                            file.relative_path,
+                            EvidenceCategory.api,
+                            f"{method} ASP.NET Core minimal API route declared.",
+                            line_number=line_number,
+                            confidence=ConfidenceLevel.high,
+                        )
+                        findings.append(ApiEndpointFinding(
+                            exposure="exposed",
+                            method=method,
+                            route=route,
+                            relative_path=file.relative_path,
+                            framework="ASP.NET Core",
+                            evidence_references=[ref.evidence_id],
+                            confidence=ConfidenceLevel.high,
+                        ))
             if file.extension.lower() == ".py":
                 for line_number, line in enumerate(lines, 1):
                     for framework, pattern in (
