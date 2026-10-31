@@ -1,9 +1,12 @@
 from pathlib import Path
+import os
+import stat
 
 import pytest
 
 from app.repository.exceptions import WorkspaceError
 from app.repository.workspace_manager import WorkspaceManager
+from app.repository.workspace_manager import retry_readonly_removal
 
 
 def test_unique_workspaces_and_cleanup(tmp_path):
@@ -39,3 +42,25 @@ def test_cleanup_rejects_symlinked_workspace(tmp_path):
     with pytest.raises(WorkspaceError):
         manager.cleanup_workspace(workspace)
     assert sibling.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows read-only deletion semantics")
+def test_cleanup_removes_readonly_git_files(tmp_path):
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    workspace = manager.create_workspace()
+    git_objects = workspace / "repository" / ".git" / "objects"
+    git_objects.mkdir(parents=True)
+    packed = git_objects / "pack"
+    packed.write_bytes(b"git data")
+    packed.chmod(stat.S_IREAD)
+    assert manager.cleanup_workspace(workspace)
+    assert not list(manager.workspace_root.iterdir())
+
+
+def test_readonly_retry_does_not_hide_unrelated_errors(tmp_path):
+    file = tmp_path / "writable"
+    file.write_text("data", encoding="utf-8")
+    error = PermissionError("unrelated access denial")
+    with pytest.raises(PermissionError, match="unrelated access denial"):
+        retry_readonly_removal(os.unlink, str(file), (PermissionError, error, None))
+    assert file.exists()

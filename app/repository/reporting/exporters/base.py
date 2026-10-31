@@ -21,7 +21,11 @@ SECRET_PATTERNS = (
 )
 ABSOLUTE_PATH_PATTERNS = (
     re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/](?:[^\\/\s<>:\"|?*]+[\\/])*[^\\/\s<>:\"|?*]*)"),
-    re.compile(r"(?<![A-Za-z0-9:/])/((?!/)(?:[^/\s<>]+/)*[^/\s<>]*)"),
+    re.compile(r"""(?<![A-Za-z0-9:/])/((?!/)(?:[^/\s<>"'`\[\]()]+/)*[^/\s<>"'`\[\]()]*)"""),
+)
+HTTP_ROUTE_CONTEXT = re.compile(
+    r"(?:\b(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT)\s+"
+    r"|\bapi:(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT):)$"
 )
 
 
@@ -30,7 +34,15 @@ def redact_sensitive_text(text: str) -> str:
     for pattern in SECRET_PATTERNS:
         redacted = pattern.sub("[REDACTED]", redacted)
     for pattern in ABSOLUTE_PATH_PATTERNS:
-        redacted = pattern.sub("[LOCAL PATH WITHHELD]", redacted)
+        redacted = pattern.sub(
+            lambda match: (
+                match.group(0)
+                if match.group(0).startswith("/")
+                and HTTP_ROUTE_CONTEXT.search(redacted[:match.start()])
+                else "[LOCAL PATH WITHHELD]"
+            ),
+            redacted,
+        )
     return redacted
 
 

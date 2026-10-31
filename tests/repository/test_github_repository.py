@@ -5,6 +5,8 @@ from pathlib import Path
 from app.repository.adapters.github_repository import GitHubRepositoryAdapter
 from app.repository.exceptions import InvalidRepositorySourceError
 from app.repository.exceptions import RepositorySecurityError
+from app.repository.exceptions import RepositoryNotFoundError
+from app.repository.analysis.content_access import SnapshotContentReader
 from app.repository.workspace_manager import WorkspaceManager
 
 
@@ -74,3 +76,75 @@ async def test_mocked_clone_captures_commit_and_snapshot(tmp_path, monkeypatch):
     assert snapshot.repository_name == "Agents"
     assert snapshot.commit_sha == "a" * 40
     assert snapshot.total_files == 1
+
+
+@pytest.mark.parametrize("url", [
+    "https://github.com/devpuja/Agents/tree/main/agent-project/../other",
+    "https://github.com/devpuja/Agents/tree/main/agent-project//nested",
+    "https://github.com/devpuja/Agents/tree/main/C:/outside",
+    "https://github.com/devpuja/Agents/tree/main/CON",
+    "https://github.com/devpuja/Agents/tree/main/agent-project.",
+    "https://github.com/devpuja/Agents/tree/main/%2e%2e/other",
+    "https://github.com/devpuja/Agents/tree/main/agent-project?token=value",
+])
+def test_invalid_subdirectory_urls(url):
+    with pytest.raises(InvalidRepositorySourceError):
+        GitHubRepositoryAdapter().parse_url(url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("branch", [None, "main"])
+async def test_tree_url_isolates_subdirectory_and_content_reader(tmp_path, monkeypatch, branch):
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    adapter = GitHubRepositoryAdapter(manager)
+    commands = []
+
+    def fake_git(args, cwd=None):
+        commands.append(args)
+        if "clone" in args:
+            destination = Path(args[-1])
+            selected = destination / "agent-project" / "nested"
+            selected.mkdir(parents=True)
+            (selected / "app.py").write_text("print('selected')", encoding="utf-8")
+            (destination / "outside.py").write_text("print('outside')", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, stdout="a" * 40 + "\n")
+
+    monkeypatch.setattr(adapter, "_git", fake_git)
+    url = "https://github.com/devpuja/Agents/tree/main/agent-project"
+    snapshot = await adapter.retrieve(url, branch=branch)
+    assert snapshot.branch == "main"
+    assert snapshot.source_reference == url
+    assert [item.relative_path for item in snapshot.files] == ["nested/app.py"]
+    assert SnapshotContentReader(manager).read_text(snapshot, snapshot.files[0]) == "print('selected')"
+    assert commands[0][-3:] == ["main", "https://github.com/devpuja/Agents.git", str(
+        manager.workspace_root / str(snapshot.workspace_id) / "repository"
+    )]
+    assert manager.cleanup_workspace(snapshot.workspace_id)
+
+
+@pytest.mark.asyncio
+async def test_tree_branch_conflict_fails_before_clone(tmp_path, monkeypatch):
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    adapter = GitHubRepositoryAdapter(manager)
+    monkeypatch.setattr(adapter, "_git", lambda *args: pytest.fail("Must not clone"))
+    with pytest.raises(InvalidRepositorySourceError, match="conflicts"):
+        await adapter.retrieve(
+            "https://github.com/devpuja/Agents/tree/main/agent-project", branch="other"
+        )
+    assert not list(manager.workspace_root.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_missing_subdirectory_cleans_workspace(tmp_path, monkeypatch):
+    manager = WorkspaceManager(tmp_path / "workspaces")
+    adapter = GitHubRepositoryAdapter(manager)
+
+    def fake_git(args, cwd=None):
+        if "clone" in args:
+            Path(args[-1]).mkdir(parents=True)
+        return subprocess.CompletedProcess(args, 0, stdout="a" * 40 + "\n")
+
+    monkeypatch.setattr(adapter, "_git", fake_git)
+    with pytest.raises(RepositoryNotFoundError, match="subdirectory"):
+        await adapter.retrieve("https://github.com/devpuja/Agents/tree/main/missing")
+    assert not list(manager.workspace_root.iterdir())

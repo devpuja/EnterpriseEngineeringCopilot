@@ -188,15 +188,20 @@ class ReportSections:
         exposed = [item for item in analysis.api_endpoints if item.exposure.lower() == "exposed"]
         consumed = [item for item in analysis.api_endpoints if item.exposure.lower() == "consumed"]
         api_lines = "\n".join([
-            "Exposed APIs:",
+            "Exposed APIs:" if exposed else "Exposed APIs: no supported route declarations detected.",
             *[f"- {item.method} {item.route} ({item.framework})" for item in exposed],
-            "Consumed APIs:",
+            "Consumed APIs:" if consumed else "Consumed APIs: no supported HTTP client calls detected.",
             *[f"- {item.method} {item.route} ({item.framework})" for item in consumed],
         ] if exposed or consumed else ["- No supported API findings were identified."])
+        if configuration.include_limitations:
+            api_lines += (
+                "\n\nStatic detection covers declared routes and fetch/axios calls in source files; "
+                "SDK-based and dynamically constructed API calls may not be detected."
+            )
         add(
             "api_architecture",
             "API Architecture",
-            "\n".join(api_lines),
+            api_lines,
             sorted({ref for item in analysis.api_endpoints for ref in item.evidence_references}),
             diagrams=[item.diagram_id for item in diagrams if item.diagram_type.value == "api"],
         )

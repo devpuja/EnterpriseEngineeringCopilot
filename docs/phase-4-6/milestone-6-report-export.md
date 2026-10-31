@@ -22,6 +22,15 @@ Sections are built in one deterministic order and include the repository overvie
 
 All exporters validate the report before writing. Configuration filtering occurs while the canonical report is prepared, not independently in exporters. Evidence, confidence, limitations, Mermaid source, rendered diagrams, selected diagram types, included sections, and excluded sections are reflected in the report data consumed by every format. Conflicting include/exclude values are rejected.
 
+The repository-to-report API now validates configuration before repository retrieval
+and returns field-oriented HTTP 422 errors for unsupported IDs, include/exclude
+overlap, and explicitly selected evidence/limitations sections whose include flags
+are disabled. Shared identifier constants drive validation and OpenAPI.
+See the [API configuration reference](../../README.md#repository-source-and-configuration-identifiers)
+for every supported identifier, empty-array behavior, diagram type versus diagram
+ID distinctions, and the GitHub subdirectory payload. Existing canonical filtering
+and empty-array defaults are unchanged.
+
 ## Exporters and cross-format consistency
 
 - **Markdown:** adds metadata and a table of contents, uses safe text handling, emits Mermaid fences when enabled, and writes valid rendered PNGs as managed relative image assets.
@@ -34,6 +43,15 @@ Each exporter reads the same validated `ArchitectureReport.sections` and `Archit
 ## Diagram rendering and artifact management
 
 The report generator reuses renderer output already present in the visualization/synthesis results. Rendering remains local through the configured Mermaid CLI in the existing renderer; no exporter calls a remote rendering service or independently regenerates diagrams. HTML can embed sanitized SVG or PNG; Markdown, PDF, and DOCX embed validated PNG where supported. Mermaid source is preserved when configured, and missing/invalid rendering produces an explicit export warning.
+
+API Architecture content preserves complete lines and HTTP routes such as
+`POST /chat` and `POST /upload` through report preparation and every exporter.
+Redaction distinguishes explicit HTTP-method route contexts from absolute local
+paths, and does not consume Mermaid node delimiters when redacting a path.
+API Mermaid relationships use the actual source and target nodes for both
+exposed and consumed calls. When limitations are enabled, the API section states
+the static detector's SDK/dynamic-call limitations rather than claiming an
+exhaustive runtime API inventory.
 
 `ArtifactManager` keeps output in per-report directories, generates UUID-based report filenames, restricts attachment names and extensions, rejects traversal, prevents overwrite, enforces the configured size ceiling, and returns relative managed references. For local analyses, exporters reject output roots inside the source repository. Export results record format, filename, MIME type, size, and relative artifact location.
 

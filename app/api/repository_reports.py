@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.repository.analysis.models import RepositoryAnalysisResult
 from app.repository.exceptions import (
@@ -18,6 +18,10 @@ from app.repository.reporting.models import (
     ArchitectureReport,
     ReportConfiguration,
     ReportFormat,
+)
+from app.repository.reporting.validation import (
+    ReportValidationError,
+    validate_configuration,
 )
 from app.services.repository_report_service import (
     ArtifactRecord,
@@ -42,9 +46,25 @@ class RepositoryAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_type: Literal["local", "github"]
-    source_reference: str = Field(min_length=1, max_length=2048)
+    source_reference: str = Field(
+        min_length=1,
+        max_length=2048,
+        description="Allowed local path, GitHub repository URL, or "
+        "https://github.com/owner/repo/tree/branch/subdirectory. "
+        "For tree URLs, branch must match the URL if supplied.",
+    )
     branch: str | None = Field(default=None, min_length=1, max_length=255)
     configuration: ReportConfiguration = Field(default_factory=ReportConfiguration)
+
+    @field_validator("configuration")
+    @classmethod
+    def validate_report_configuration(cls, value: ReportConfiguration) -> ReportConfiguration:
+        try:
+            validate_configuration(value)
+        except ReportValidationError:
+            logger.warning("event=repository_report_configuration_rejected")
+            raise
+        return value
 
 
 class ReportExportRequest(BaseModel):
@@ -167,6 +187,12 @@ async def analyze_repository(
         WorkspaceError,
     ) as exc:
         _raise_repository_error(exc)
+    except ReportValidationError as exc:
+        logger.warning(
+            "event=repository_report_generation_rejected error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         logger.warning(
             "event=repository_report_generation_rejected error_type=%s",

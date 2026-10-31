@@ -1,0 +1,38 @@
+Url:http://127.0.0.1:8000/api/v1/repository-reports/analyses
+
+Payload:
+{
+  "source_type": "local",
+  "source_reference": "C:\\Projects_07102025\\Projects\\QiroDashboardCharts",
+  "branch": "main",
+  "configuration": {
+    "title": "Qiro Dashboard Architecture Assessment",
+    "selected_diagram_types": [],
+    "include_sections": [],
+    "exclude_sections": [],
+    "include_evidence": true,
+    "include_confidence": true,
+    "include_limitations": true,
+    "include_mermaid_source": true,
+    "include_rendered_diagrams": true,
+    "output_format": "markdown",
+    "organization_name": "Contoso",
+    "project_name": "QiroDashboardCharts",
+    "report_version": "1.0",
+    "maximum_diagram_nodes": 30
+  }
+}
+
+{
+  "source_type": "github",
+  "source_reference": "https://github.com/devpuja/Agents/tree/main/agent-project",
+  "branch": "main",
+  "configuration": {
+    "selected_diagram_types": ["api", "unified_architecture"],
+    "include_sections": [
+      "executive_summary",
+      "architecture_diagrams",
+      "api_architecture"
+    ]
+  }
+}

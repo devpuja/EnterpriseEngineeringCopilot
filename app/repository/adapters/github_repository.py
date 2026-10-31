@@ -7,7 +7,7 @@ import socket
 import subprocess
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
@@ -22,7 +22,7 @@ from app.repository.exceptions import (
 from app.repository.file_discovery import FileDiscovery
 from app.repository.exclusions import RepositoryExclusions
 from app.repository.models import RepositorySnapshot
-from app.repository.workspace_manager import WorkspaceManager
+from app.repository.workspace_manager import WorkspaceManager, retry_readonly_removal
 
 
 class GitHubRepositoryAdapter(BaseRepositoryAdapter):
@@ -35,6 +35,12 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
         self.git_executable = git_executable or settings.git_executable_path
 
     def parse_url(self, source_reference: str) -> tuple[str, str, str]:
+        owner, repository, clone_url, _, _ = self._parse_reference(source_reference)
+        return owner, repository, clone_url
+
+    def _parse_reference(
+        self, source_reference: str
+    ) -> tuple[str, str, str, str | None, tuple[str, ...]]:
         source = self._validate_nonempty_source(source_reference)
         parsed = urlparse(source)
         if parsed.scheme != "https":
@@ -78,6 +84,22 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
         if parsed.query or parsed.fragment or not parsed.path:
             raise InvalidRepositorySourceError("Repository URL format is invalid.")
         path_parts = parsed.path[1:].split("/") if parsed.path.startswith("/") else parsed.path.split("/")
+        tree_branch = None
+        subdirectory: tuple[str, ...] = ()
+        if len(path_parts) >= 5 and path_parts[2] == "tree":
+            tree_branch = path_parts[3]
+            subdirectory = tuple(path_parts[4:])
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", tree_branch) or tree_branch in {".", ".."}:
+                raise InvalidRepositorySourceError("Repository tree branch is invalid.")
+            if any(
+                not re.fullmatch(r"[A-Za-z0-9._-]+", part)
+                or part in {".", ".."}
+                or part.endswith(".")
+                or PureWindowsPath(part).is_reserved()
+                for part in subdirectory
+            ):
+                raise InvalidRepositorySourceError("Repository subdirectory is invalid.")
+            path_parts = path_parts[:2]
         if len(path_parts) != 2:
             raise InvalidRepositorySourceError("Repository URL must contain an owner and repository name.")
         owner, repository = path_parts
@@ -90,7 +112,7 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
         if not repository or not self.REPOSITORY_PATTERN.fullmatch(repository):
             raise InvalidRepositorySourceError("Repository URL contains an invalid repository name.")
         safe_url = f"https://{host}/{owner}/{repository}.git"
-        return owner, repository, safe_url
+        return owner, repository, safe_url, tree_branch, subdirectory
 
     def _git(self, args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         git_path = shutil.which(self.git_executable) or self.git_executable
@@ -125,7 +147,12 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
         branch: str | None = None,
         analysis_id=None,
     ) -> RepositorySnapshot:
-        owner, repository_name, clone_url = self.parse_url(source_reference)
+        owner, repository_name, clone_url, tree_branch, subdirectory = self._parse_reference(
+            source_reference
+        )
+        if tree_branch and branch and tree_branch != branch:
+            raise InvalidRepositorySourceError("Repository branch conflicts with the tree URL.")
+        branch = branch or tree_branch
         if branch and not re.fullmatch(r"[A-Za-z0-9._/-]+", branch):
             raise InvalidRepositorySourceError("Repository branch or reference is invalid.")
         analysis_uuid = UUID(str(analysis_id)) if analysis_id else uuid4()
@@ -153,6 +180,8 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
                 raise RepositoryNotFoundError("Git returned an invalid commit SHA.")
 
             exclusions = RepositoryExclusions()
+            if any(exclusions.is_excluded_directory(part) for part in subdirectory):
+                raise RepositorySecurityError("Repository subdirectory is excluded from analysis.")
             total_size = 0
             total_count = 0
             for current_root, directories, filenames in os.walk(clone_directory, topdown=True, followlinks=False):
@@ -187,7 +216,7 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
 
             git_directory = clone_directory / ".git"
             if git_directory.exists() and not git_directory.is_symlink():
-                shutil.rmtree(git_directory)
+                shutil.rmtree(git_directory, onerror=retry_readonly_removal)
             elif git_directory.is_symlink():
                 git_directory.unlink()
 
@@ -204,12 +233,29 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
                     if exclusions.is_excluded(relative.as_posix()):
                         path.unlink(missing_ok=True)
 
+            if subdirectory:
+                selected = clone_directory.joinpath(*subdirectory)
+                current = clone_directory
+                for part in subdirectory:
+                    current = current / part
+                    if current.is_symlink():
+                        raise RepositorySecurityError("Repository subdirectory must not follow symlinks.")
+                if not selected.is_dir():
+                    raise RepositoryNotFoundError("Repository subdirectory could not be found.")
+                selected_directory = workspace / "selected_repository"
+                selected.rename(selected_directory)
+                shutil.rmtree(clone_directory, onerror=retry_readonly_removal)
+                selected_directory.rename(clone_directory)
+
             files = await asyncio.to_thread(FileDiscovery().discover, clone_directory)
+            reference = f"https://github.com/{owner}/{repository_name}"
+            if subdirectory:
+                reference += f"/tree/{tree_branch}/" + "/".join(subdirectory)
             return RepositorySnapshot(
                 analysis_id=analysis_uuid,
                 source_type="github",
                 repository_name=repository_name.removesuffix(".git"),
-                source_reference=f"https://github.com/{owner}/{repository_name}",
+                source_reference=reference,
                 branch=branch,
                 commit_sha=commit_sha,
                 workspace_id=workspace_id,

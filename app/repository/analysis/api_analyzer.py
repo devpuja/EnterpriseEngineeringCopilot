@@ -11,6 +11,11 @@ class APIAnalyzer:
     def analyze(self, snapshot: RepositorySnapshot, reader: RepositoryContentReader, evidence: EvidenceCollector) -> list[ApiEndpointFinding]:
         findings: list[ApiEndpointFinding] = []
         for file in snapshot.files:
+            extension = file.extension.lower()
+            if file.is_binary or extension not in {
+                ".cs", ".py", ".js", ".jsx", ".ts", ".tsx", ".html",
+            }:
+                continue
             text = reader.read_text(snapshot, file) or ""
             if not text:
                 continue
@@ -80,14 +85,27 @@ class APIAnalyzer:
                     if "uvicorn.run(" in line:
                         ref = evidence.add(file.relative_path, EvidenceCategory.entry_point, "uvicorn application entry point found.", line_number=line_number)
 
+            if extension not in {".js", ".jsx", ".ts", ".tsx", ".html"}:
+                continue
             for line_number, line in enumerate(lines, 1):
-                for method in ("fetch", "axios.get", "axios.post", "axios.put", "axios.delete", "axios.patch"):
-                    if method in line:
-                        route_match = re.search(r"['\"`]([^'\"`]*(?:/api/|https?://)[^'\"`]*)['\"`]", line)
-                        route = route_match.group(1) if route_match else "unknown"
-                        http_method = "GET" if method == "fetch" else method.split(".")[-1].upper()
-                        ref = evidence.add(file.relative_path, EvidenceCategory.api, "Client-side HTTP request found; this API may be consumed, not implemented.", line_number=line_number, confidence=ConfidenceLevel.high)
-                        findings.append(ApiEndpointFinding(exposure="consumed", method=http_method, route=route, relative_path=file.relative_path, framework="HTTP client", evidence_references=[ref.evidence_id], confidence=ConfidenceLevel.medium))
+                if line.lstrip().startswith(("//", "/*", "*", "<!--")):
+                    continue
+                for call in re.finditer(
+                    r"\b(fetch|axios\.(?:get|post|put|delete|patch))\s*\(", line
+                ):
+                    method = call.group(1)
+                    arguments = line[call.end():]
+                    route_match = re.match(r"\s*(['\"`])([^'\"`]+)\1", arguments)
+                    route = route_match.group(2) if route_match else "unknown"
+                    http_method = "GET" if method == "fetch" else method.split(".")[-1].upper()
+                    if method == "fetch":
+                        configured_method = re.search(
+                            r"\bmethod\s*:\s*['\"]([A-Za-z]+)['\"]", arguments
+                        )
+                        if configured_method:
+                            http_method = configured_method.group(1).upper()
+                    ref = evidence.add(file.relative_path, EvidenceCategory.api, "Client-side HTTP request found; this API may be consumed, not implemented.", line_number=line_number, confidence=ConfidenceLevel.high)
+                    findings.append(ApiEndpointFinding(exposure="consumed", method=http_method, route=route, relative_path=file.relative_path, framework="HTTP client", evidence_references=[ref.evidence_id], confidence=ConfidenceLevel.medium))
         return findings
 
 

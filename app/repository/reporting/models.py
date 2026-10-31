@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from app.repository.analysis.models import EvidenceReference
+from app.repository.reporting.identifiers import SECTION_ORDER, SUPPORTED_DIAGRAM_TYPES
 from app.repository.review.models import ArchitectureReviewResult
 from app.repository.synthesis.models import ArchitectureSynthesisResult
 from app.repository.visualization.models import ArchitectureDiagram
@@ -21,9 +22,23 @@ class ReportConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = None
-    selected_diagram_types: list[str] = Field(default_factory=list)
-    include_sections: list[str] = Field(default_factory=list)
-    exclude_sections: list[str] = Field(default_factory=list)
+    selected_diagram_types: list[str] = Field(
+        default_factory=list,
+        description="Case-sensitive diagram IDs. Empty selects all generated diagrams. "
+        "unified_architecture selects the synthesis diagram; component also includes it.",
+        json_schema_extra={"items": {"type": "string", "enum": list(SUPPORTED_DIAGRAM_TYPES)}},
+    )
+    include_sections: list[str] = Field(
+        default_factory=list,
+        description="Case-sensitive section IDs. Empty selects all available sections. "
+        "Enabled limitations and evidence_references remain included unless excluded.",
+        json_schema_extra={"items": {"type": "string", "enum": list(SECTION_ORDER)}},
+    )
+    exclude_sections: list[str] = Field(
+        default_factory=list,
+        description="Case-sensitive section IDs to omit. Cannot overlap include_sections.",
+        json_schema_extra={"items": {"type": "string", "enum": list(SECTION_ORDER)}},
+    )
     include_evidence: bool = Field(default=True, exclude=True)
     include_confidence: bool = Field(default=True, exclude=True)
     include_limitations: bool = Field(default=True, exclude=True)

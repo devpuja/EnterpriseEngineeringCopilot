@@ -1,5 +1,7 @@
 import logging
+import os
 import shutil
+import stat
 import threading
 import time
 from pathlib import Path
@@ -10,6 +12,24 @@ from app.repository.exceptions import WorkspaceError
 
 
 logger = logging.getLogger(__name__)
+
+
+def retry_readonly_removal(function, path, exc_info):
+    error = exc_info[1]
+    candidate = Path(path)
+    if (
+        os.name != "nt"
+        or not isinstance(error, PermissionError)
+        or function not in (os.unlink, os.remove)
+        or candidate.is_symlink()
+        or not candidate.is_file()
+    ):
+        raise error
+    mode = candidate.stat().st_mode
+    if mode & stat.S_IWRITE:
+        raise error
+    candidate.chmod(mode | stat.S_IWRITE)
+    function(path)
 
 
 class WorkspaceManager:
@@ -114,7 +134,7 @@ class WorkspaceManager:
             if quarantine.is_symlink():
                 quarantine.unlink()
             else:
-                shutil.rmtree(quarantine)
+                shutil.rmtree(quarantine, onerror=retry_readonly_removal)
             with self._lock:
                 if workspace_id:
                     self._workspaces.pop(workspace_id, None)

@@ -138,6 +138,86 @@ clone adapter. Managed workspaces are removed after analysis. Set
 `REPORT_ARTIFACT_DIRECTORY` to choose where exported files are stored; the
 default is `rag_data/reports`.
 
+#### Repository source and configuration identifiers
+
+GitHub repository-root URLs remain supported. To analyze only a subdirectory,
+use a tree URL such as `https://github.com/devpuja/Agents/tree/main/agent-project`.
+The adapter clones the repository but analyzes only that directory, with evidence
+paths relative to it. The branch defaults to the tree URL's branch; an explicit
+branch must match. Tree URLs require a single-segment branch name and nonempty
+subdirectory segments containing letters, digits, `_`, `-`, or `.`; traversal,
+Windows reserved names, trailing dots, query strings, and fragments are rejected.
+Use a repository-root URL and `branch` for branch names containing `/`.
+
+All configuration identifiers are **case-sensitive**, exact snake_case strings.
+Diagram types are not report section IDs or generated diagram IDs:
+
+| `selected_diagram_types` identifier | Generated diagram ID |
+| --- | --- |
+| `system_context` | `system_context` |
+| `component` | `component_architecture` (also includes `unified_architecture` when synthesis is available) |
+| `dependency` | `project_dependencies` |
+| `api` | `api_architecture` |
+| `database` | `database_architecture` |
+| `integration` | `external_integrations` |
+| `architecture_pattern` | `architecture_patterns` |
+| `unified_architecture` | `unified_architecture` (synthesis diagram selector, not a new DiagramType enum value) |
+
+Supported `include_sections` and `exclude_sections` IDs, in canonical order:
+
+```text
+cover, executive_summary, repository_overview, existing_architecture,
+architecture_diagrams, technology_stack, components_dependencies,
+api_architecture, database_architecture, external_integrations,
+architecture_findings, architecture_synthesis, architecture_components,
+architecture_relationships, architecture_data_flows, external_systems,
+architecture_review, review_findings, architecture_strengths, recommendations,
+limitations, evidence_references, appendix
+```
+
+- Empty `selected_diagram_types` selects all generated diagrams. Empty
+  `include_sections` selects all available sections. Empty `exclude_sections`
+  excludes nothing. Existing defaults are unchanged.
+- Nonempty `include_sections` selects those sections, in canonical order.
+  Enabled `limitations` and `evidence_references` are still included unless
+  explicitly excluded. Explicitly selecting one while disabling its include
+  flag is an error. Include/exclude overlap is also an error.
+- Diagram and section selection are independent. Selecting only a section does
+  not suppress other diagrams; exporters consume the canonical diagram list
+  separately from the section list. Diagram selection filters the report after
+  visualization and synthesis, not the upstream analysis.
+- Unsupported IDs are rejected with HTTP **422** before repository retrieval;
+  the validation message identifies the field, invalid IDs, and supported IDs.
+  OpenAPI exposes the same supported identifiers. There is no case normalization
+  or silent dropping of invalid values.
+- The API supplies synthesis and review. Standalone Milestone 3 report generation
+  without those results cannot produce their detailed component/review sections;
+  explicitly requesting unavailable sections fails report validation.
+
+Working analysis payload for the GitHub subdirectory:
+
+```json
+{
+  "source_type": "github",
+  "source_reference": "https://github.com/devpuja/Agents/tree/main/agent-project",
+  "branch": "main",
+  "configuration": {
+    "selected_diagram_types": ["api", "unified_architecture"],
+    "include_sections": ["executive_summary", "architecture_diagrams", "api_architecture"],
+    "exclude_sections": [],
+    "output_format": "markdown"
+  }
+}
+```
+
+POST this to `/api/v1/repository-reports/analyses`, then POST
+`{"format": "markdown"}` (or `html`, `pdf`, `docx`) to
+`/api/v1/repository-reports/{report_id}/exports`. Analysis does not automatically
+export the configured `output_format`.
+
+On Windows, managed clone cleanup retries deletion of read-only Git files after
+making those files writable; unrelated permission failures remain errors.
+
 The report/artifact registry is in-memory and scoped to one application process.
 Restarting the process invalidates API references; multi-worker deployments
 require shared persistence and artifact storage. The API does not provide

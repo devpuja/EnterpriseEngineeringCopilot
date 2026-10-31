@@ -1,35 +1,8 @@
 from pathlib import PurePosixPath, PureWindowsPath
 from datetime import datetime
 
+from app.repository.reporting.identifiers import SECTION_ORDER, SUPPORTED_DIAGRAM_TYPES
 from app.repository.reporting.models import ArchitectureReport, ReportConfiguration
-from app.repository.visualization.models import DiagramType
-
-
-SECTION_ORDER = (
-    "cover",
-    "executive_summary",
-    "repository_overview",
-    "existing_architecture",
-    "architecture_diagrams",
-    "technology_stack",
-    "components_dependencies",
-    "api_architecture",
-    "database_architecture",
-    "external_integrations",
-    "architecture_findings",
-    "architecture_synthesis",
-    "architecture_components",
-    "architecture_relationships",
-    "architecture_data_flows",
-    "external_systems",
-    "architecture_review",
-    "review_findings",
-    "architecture_strengths",
-    "recommendations",
-    "limitations",
-    "evidence_references",
-    "appendix",
-)
 
 
 class ReportValidationError(ValueError):
@@ -38,27 +11,36 @@ class ReportValidationError(ValueError):
 
 def validate_configuration(configuration: ReportConfiguration) -> None:
     known_sections = set(SECTION_ORDER)
-    unknown_sections = (
-        set(configuration.include_sections) | set(configuration.exclude_sections)
-    ) - known_sections
-    if unknown_sections:
-        raise ReportValidationError(
-            "configuration.sections: unknown section IDs: "
-            + ", ".join(sorted(unknown_sections))
-        )
+    for field in ("include_sections", "exclude_sections"):
+        unknown_sections = set(getattr(configuration, field)) - known_sections
+        if unknown_sections:
+            raise ReportValidationError(
+                f"configuration.{field}: unknown section IDs: "
+                + ", ".join(sorted(unknown_sections))
+                + ". Supported IDs: " + ", ".join(SECTION_ORDER)
+            )
     overlap = set(configuration.include_sections) & set(configuration.exclude_sections)
     if overlap:
         raise ReportValidationError(
             "configuration.sections: section IDs cannot be both included and excluded: "
             + ", ".join(sorted(overlap))
         )
-    valid_diagrams = {item.value for item in DiagramType} | {"unified_architecture"}
-    unknown_diagrams = set(configuration.selected_diagram_types) - valid_diagrams
+    unknown_diagrams = set(configuration.selected_diagram_types) - set(SUPPORTED_DIAGRAM_TYPES)
     if unknown_diagrams:
         raise ReportValidationError(
             "configuration.selected_diagram_types: unsupported diagram types: "
             + ", ".join(sorted(unknown_diagrams))
+            + ". Supported IDs: " + ", ".join(SUPPORTED_DIAGRAM_TYPES)
         )
+    for section_id, enabled in (
+        ("limitations", configuration.include_limitations),
+        ("evidence_references", configuration.include_evidence),
+    ):
+        if section_id in configuration.include_sections and not enabled:
+            raise ReportValidationError(
+                f"configuration.include_sections: {section_id} is explicitly selected "
+                "but disabled by its include flag."
+            )
 
 
 def validate_report(report: ArchitectureReport, require_marked: bool = False) -> None:

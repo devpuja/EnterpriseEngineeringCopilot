@@ -26,6 +26,16 @@ The analyzer supports `.NET/C#`, Python, Angular, and React evidence:
 - Entity Framework Core, SQLAlchemy, Django ORM, repositories, and redacted database configuration keys;
 - HTTP, messaging, cloud, authentication, and storage integration indicators.
 
+API extraction reads only supported source-file extensions, never PDF/document
+contents or binary files. Consumed-call detection matches `fetch(...)` and
+`axios.get/post/put/delete/patch(...)` in JavaScript, TypeScript, JSX/TSX, and HTML,
+not substrings such as Python database `fetchall()`. Literal first-argument routes
+are retained even without an `/api/` prefix; `fetch` respects an explicit
+same-line literal `method` option. Dynamic route arguments remain `unknown`.
+This is static pattern detection, not a full language parser; SDK-mediated calls
+(including OpenAI clients), multiline options, and dynamic API construction may
+not be detected.
+
 ## Evidence and confidence
 
 Every finding uses a typed confidence level: `high`, `medium`, or `low`. Evidence references include a relative file path, category, explanation, optional symbol, and optional line range. Findings are deduplicated where possible.

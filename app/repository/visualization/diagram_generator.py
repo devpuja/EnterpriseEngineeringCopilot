@@ -269,7 +269,8 @@ class DiagramGenerator:
                 evidence_references=evidence,
             ))
             relation_refs[f"{source_id}->{target_id}"] = endpoint.evidence_references
-            lines.append(f'    {source_id} -->|{relation_type}| {node_id}["{self._label(label)}"]')
+            lines.append(f'    {node_id}["{self._label(label)}"]')
+            lines.append(f'    {source_id} -->|{relation_type}| {target_id}')
 
         if not limited:
             nodes.append(DiagramNode(node_id="no_api_findings", label="No supported API findings"))
