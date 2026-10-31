@@ -2,8 +2,11 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
+from app.repository.analysis.models import EvidenceReference
+from app.repository.review.models import ArchitectureReviewResult
+from app.repository.synthesis.models import ArchitectureSynthesisResult
 from app.repository.visualization.models import ArchitectureDiagram
 
 
@@ -52,12 +55,22 @@ class ArchitectureReport(BaseModel):
     report_id: UUID = Field(default_factory=uuid4)
     analysis_id: UUID
     repository_name: str = Field(min_length=1)
+    repository_source_type: str = "unknown"
+    repository_reference: str = ""
+    synthesis_id: UUID | None = None
+    review_id: UUID | None = None
     title: str = Field(min_length=1)
     sections: list[ReportSection] = Field(default_factory=lambda: list[ReportSection]())
     diagrams: list[ArchitectureDiagram] = Field(default_factory=lambda: list[ArchitectureDiagram]())
+    evidence: list[EvidenceReference] = Field(default_factory=list)
+    synthesis: ArchitectureSynthesisResult | None = None
+    review: ArchitectureReviewResult | None = None
     report_metadata: ReportMetadata
     limitations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     configuration: ReportConfiguration = Field(default_factory=ReportConfiguration)
+    validated: bool = False
+    _source_repository_root: str | None = PrivateAttr(default=None)
 
 
 class ReportExportResult(BaseModel):
@@ -70,5 +83,6 @@ class ReportExportResult(BaseModel):
         description="Managed relative location; never an internal absolute path.",
     )
     file_size: int = Field(default=0, ge=0)
+    mime_type: str | None = None
     export_status: str
     warnings: list[str] = Field(default_factory=list)

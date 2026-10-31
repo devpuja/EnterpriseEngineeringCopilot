@@ -54,7 +54,7 @@ class ArchitectureDiagram(BaseModel):
     title: str = Field(min_length=1)
     diagram_type: DiagramType
     description: str
-    mermaid_source: str = Field(min_length=1)
+    mermaid_source: str = ""
     rendered_svg: str | None = None
     rendered_png: bytes | None = None
     nodes: list[DiagramNode] = Field(default_factory=lambda: list[DiagramNode]())

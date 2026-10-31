@@ -56,8 +56,8 @@ Milestone	| Name	| 	Scope	|  Status
 3	| 	Architecture Visualization	| 	Seven Mermaid architecture diagram types, evidence mapping and structural validation	| Complete
 4	| 	Architecture Synthesis	| 	Unified architecture model: components, relationships and data flows	| 	Complete
 5	| 	Architecture Review	| Evaluate architecture findings, identify risks, gaps and improvement recommendations	| 	Complete
-6	| 	Report Export	| 	Markdown, HTML, PDF and DOCX	| 	Next
-7	| 	API & End-to-End Validation	| 	Repository analysis API, report download, error handling, integration and regression tests	| 	Planned
+6	| 	Report Export	| 	Markdown, HTML, PDF and DOCX from one validated report model	| 	Complete
+7	| 	API & End-to-End Validation	| 	Repository analysis API, report download, error handling, integration and regression tests	| 	Next
 
 Milestone details and acceptance criteria
 Milestone 4 — Architecture Synthesis
@@ -81,7 +81,7 @@ Milestone 6 — Report Export
 - HTML exporter.
 - PDF exporter.
 - DOCX exporter.
-Acceptance: All four formats are generated from the same validated report model.
+Acceptance: All four formats are generated from the same validated report model. Complete.
 
 Milestone 7 — API & End-to-End Validation
 - Repository analysis API.

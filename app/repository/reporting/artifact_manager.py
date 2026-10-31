@@ -15,6 +15,18 @@ class ArtifactManager:
         self.output_root.mkdir(parents=True, exist_ok=True)
         self.maximum_file_size_bytes = maximum_file_size_bytes
 
+    @staticmethod
+    def validate_output_directory(
+        output_root: str | Path,
+        protected_root: str | Path | None,
+    ) -> None:
+        if protected_root is None:
+            return
+        resolved_output = Path(output_root).expanduser().resolve()
+        resolved_source = Path(protected_root).expanduser().resolve()
+        if resolved_output == resolved_source or resolved_source in resolved_output.parents:
+            raise ValueError("Artifact output must not be inside the source repository.")
+
     def safe_filename(self, report_id: UUID | str, extension: str) -> str:
         normalized_extension = extension.lower().lstrip(".")
         if not re.fullmatch(r"[a-z0-9]+", normalized_extension):
@@ -51,6 +63,17 @@ class ArtifactManager:
         directory = self.report_directory(report_id)
         destination = directory / filename
         return self._write_new(destination, content)
+
+    def write_attachment(
+        self,
+        report_id: UUID | str,
+        filename: str,
+        content: bytes,
+    ) -> tuple[Path, str, int]:
+        if not re.fullmatch(r"diagram-[A-Za-z0-9_-]+\.(?:png|svg)", filename):
+            raise ValueError("Unsupported report attachment filename.")
+        directory = self.report_directory(report_id)
+        return self._write_new(directory / filename, content)
 
     def _write_new(self, destination: Path, content: bytes) -> tuple[Path, str, int]:
         if len(content) > self.maximum_file_size_bytes:

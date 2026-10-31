@@ -7,6 +7,8 @@ from app.repository.reporting.models import (
     ReportConfiguration,
     ReportExportResult,
 )
+from app.repository.review.models import ArchitectureReviewResult
+from app.repository.synthesis.models import ArchitectureSynthesisResult
 from app.repository.visualization.models import ArchitectureVisualizationResult
 
 
@@ -17,6 +19,9 @@ class ReportGeneratorContract(Protocol):
         analysis: RepositoryAnalysisResult,
         visualization: ArchitectureVisualizationResult,
         configuration: ReportConfiguration | None = None,
+        *,
+        synthesis: ArchitectureSynthesisResult | None = None,
+        review: ArchitectureReviewResult | None = None,
     ) -> ArchitectureReport:
         ...
 

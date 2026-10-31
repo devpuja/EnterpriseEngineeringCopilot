@@ -1,15 +1,27 @@
 import re
 import html
 import xml.etree.ElementTree as ET
+from io import BytesIO
 from base64 import b64encode
 from pathlib import Path
 
-from app.repository.reporting.models import ArchitectureReport, ReportExportResult, ReportFormat
+from app.repository.reporting.artifact_manager import ArtifactManager
+from app.repository.reporting.models import (
+    ArchitectureReport,
+    ReportExportResult,
+    ReportFormat,
+)
 
 
 SECRET_PATTERNS = (
     re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|private[_-]?key)\s*[:=]\s*\S+"),
     re.compile(r"(?i)(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|mssql|redis|amqp)://[^@\s]+@[^\s]+"),
+    re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@"),
+    re.compile(r"(?i)(?:[?&](?:access_token|token|key|secret|password)=)[^&\s]+"),
+)
+ABSOLUTE_PATH_PATTERNS = (
+    re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/](?:[^\\/\s<>:\"|?*]+[\\/])*[^\\/\s<>:\"|?*]*)"),
+    re.compile(r"(?<![A-Za-z0-9:/])/((?!/)(?:[^/\s<>]+/)*[^/\s<>]*)"),
 )
 
 
@@ -17,7 +29,40 @@ def redact_sensitive_text(text: str) -> str:
     redacted = text
     for pattern in SECRET_PATTERNS:
         redacted = pattern.sub("[REDACTED]", redacted)
+    for pattern in ABSOLUTE_PATH_PATTERNS:
+        redacted = pattern.sub("[LOCAL PATH WITHHELD]", redacted)
     return redacted
+
+
+def validate_export_report(report: ArchitectureReport) -> None:
+    from app.repository.reporting.validation import validate_report
+
+    validate_report(report, require_marked=True)
+
+
+def failed_export(
+    report: ArchitectureReport,
+    output_format: ReportFormat,
+    extension: str,
+    message: str,
+) -> ReportExportResult:
+    return ReportExportResult(
+        report_id=report.report_id,
+        output_format=output_format,
+        output_file_name=f"architecture-report-{report.report_id}.{extension}",
+        export_status="failed",
+        warnings=[redact_sensitive_text(message)],
+    )
+
+
+def get_artifact_manager(
+    report: ArchitectureReport,
+    output_directory: Path,
+    existing: ArtifactManager | None,
+) -> ArtifactManager:
+    output_root = existing.output_root if existing else output_directory
+    ArtifactManager.validate_output_directory(output_root, report._source_repository_root)
+    return existing or ArtifactManager(output_directory)
 
 
 def safe_markdown_file_name(report: ArchitectureReport, extension: str) -> str:
@@ -74,3 +119,31 @@ def svg_data_uri(svg: str) -> str | None:
     if sanitized is None:
         return None
     return "data:image/svg+xml;base64," + b64encode(sanitized.encode("utf-8")).decode("ascii")
+
+
+def valid_png(content: bytes) -> bool:
+    if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+    except (ImportError, OSError, ValueError):
+        return False
+    return True
+
+
+def sanitize_png(content: bytes) -> bytes | None:
+    if not valid_png(content):
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            clean_image = image.copy()
+        buffer = BytesIO()
+        clean_image.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except (ImportError, OSError, ValueError):
+        return None

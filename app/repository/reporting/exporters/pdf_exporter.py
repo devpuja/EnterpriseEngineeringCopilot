@@ -2,7 +2,14 @@ from pathlib import Path
 from io import BytesIO
 
 from app.repository.reporting.artifact_manager import ArtifactManager
-from app.repository.reporting.exporters.base import redact_sensitive_text, reportlab_text
+from app.repository.reporting.exporters.base import (
+    failed_export,
+    get_artifact_manager,
+    redact_sensitive_text,
+    reportlab_text,
+    validate_export_report,
+    valid_png,
+)
 from app.repository.reporting.models import ArchitectureReport, ReportExportResult, ReportFormat
 
 
@@ -11,7 +18,21 @@ class PDFExporter:
         self.artifact_manager = artifact_manager
 
     def export(self, report: ArchitectureReport, output_directory: Path) -> ReportExportResult:
-        manager = self.artifact_manager or ArtifactManager(output_directory)
+        try:
+            validate_export_report(report)
+        except ValueError as exc:
+            return failed_export(report, ReportFormat.pdf, "pdf", f"Invalid report: {exc}")
+
+        warnings: list[str] = []
+        try:
+            manager = get_artifact_manager(report, output_directory, self.artifact_manager)
+        except (OSError, ValueError) as exc:
+            return failed_export(
+                report,
+                ReportFormat.pdf,
+                "pdf",
+                f"Unsafe artifact output path: {type(exc).__name__}: {exc}",
+            )
         try:
             from reportlab.lib.enums import TA_CENTER
             from reportlab.lib.pagesizes import A4
@@ -60,9 +81,16 @@ class PDFExporter:
                 Spacer(1, 2 * inch),
                 Paragraph(reportlab_text(report.title), cover_style),
                 Paragraph(reportlab_text(report.repository_name), styles["Normal"]),
+                Paragraph(reportlab_text(f"Source type: {report.repository_source_type}"), styles["Normal"]),
+                Paragraph(reportlab_text(f"Source reference: {report.repository_reference}"), styles["Normal"]),
                 Paragraph(report.report_metadata.generated_at, styles["Normal"]),
+                Paragraph(reportlab_text(f"Report version: {report.report_metadata.report_version}"), styles["Normal"]),
                 PageBreak(),
+                Paragraph("Table of Contents", styles["Heading1"]),
             ]
+            for section in report.sections:
+                story.append(Paragraph(reportlab_text(section.title), styles["BodyText"]))
+            story.append(PageBreak())
             for section in report.sections:
                 story.append(Paragraph(reportlab_text(section.title), styles["Heading1"]))
                 story.append(Paragraph(
@@ -79,12 +107,21 @@ class PDFExporter:
                 story.append(Paragraph(reportlab_text(diagram.title), styles["Heading1"]))
                 if report.configuration.include_rendered_diagrams and diagram.rendered_png:
                     try:
+                        if not valid_png(diagram.rendered_png):
+                            raise ValueError("Invalid PNG content.")
                         image = Image(BytesIO(diagram.rendered_png), width=6.2 * inch, height=3.5 * inch, kind="proportional")
                         story.append(image)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        warnings.append(
+                            f"Rendered image for diagram {diagram.diagram_id} could not be embedded: "
+                            f"{type(exc).__name__}."
+                        )
                 elif report.configuration.include_rendered_diagrams and diagram.rendered_svg:
-                    pass
+                    warnings.append(
+                        f"SVG rendering for diagram {diagram.diagram_id} is not supported by the PDF exporter."
+                    )
+                elif report.configuration.include_rendered_diagrams:
+                    warnings.append(f"No rendered image is available for diagram {diagram.diagram_id}.")
                 if report.configuration.include_mermaid_source:
                     story.append(Paragraph(reportlab_text("Mermaid source fallback:"), styles["Heading2"]))
                     story.append(Paragraph(
@@ -104,7 +141,7 @@ class PDFExporter:
                 output_format=ReportFormat.pdf,
                 output_file_name=manager.safe_filename(report.report_id, "pdf"),
                 export_status="failed",
-                warnings=[f"PDF export failed: {type(exc).__name__}."],
+                warnings=[f"PDF export failed: {type(exc).__name__}: {redact_sensitive_text(str(exc))}"],
             )
 
         try:
@@ -115,13 +152,16 @@ class PDFExporter:
                 output_format=ReportFormat.pdf,
                 output_file_name=manager.safe_filename(report.report_id, "pdf"),
                 export_status="failed",
-                warnings=[f"PDF artifact write failed: {type(exc).__name__}."],
+                warnings=[f"PDF artifact write failed: {type(exc).__name__}: {redact_sensitive_text(str(exc))}"],
             )
         return ReportExportResult(
             report_id=report.report_id,
             output_format=ReportFormat.pdf,
             output_file_name=Path(relative).name,
             managed_artifact_reference=relative,
+            output_location=relative,
             file_size=size,
+            mime_type="application/pdf",
             export_status="completed",
+            warnings=[redact_sensitive_text(item) for item in warnings],
         )

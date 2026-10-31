@@ -13,6 +13,7 @@ from app.repository.reporting.contracts import (
 from app.repository.reporting.report_generator import ReportGenerator
 from app.repository.reporting.report_sections import ReportSections
 from app.repository.reporting.artifact_manager import ArtifactManager
+from app.repository.reporting.validation import ReportValidationError, validate_report
 from app.repository.reporting.exporters import (
     MarkdownExporter,
     HTMLExporter,
@@ -32,6 +33,8 @@ __all__ = [
     "ReportGenerator",
     "ReportSections",
     "ArtifactManager",
+    "ReportValidationError",
+    "validate_report",
     "MarkdownExporter",
     "HTMLExporter",
     "PDFExporter",
