@@ -116,6 +116,34 @@ Implement practical tools that use the existing project capabilities.
 - End-to-end testing: verify tool discovery, delegation, output quality, and error handling.
 Outcome: a working engineering copilot workflow that delivers a tangible artifact, not just a text response.
 
+### Phase 4.6 repository-to-report API
+
+The repository report API composes the existing repository adapters and analysis,
+visualization, synthesis, review, and validated report-export services:
+
+- `POST /api/v1/repository-reports/analyses` accepts `source_type` (`local` or
+  `github`), a `source_reference`, and optional `branch` and `configuration`.
+  The response contains the analysis result, report ID, and report summary.
+- `GET /api/v1/repository-reports/{report_id}` returns report metadata and
+  available artifact references.
+- `POST /api/v1/repository-reports/{report_id}/exports` accepts a format
+  (`markdown`, `html`, `pdf`, or `docx`) and returns generated artifact IDs.
+- `GET /api/v1/repository-reports/artifacts/{artifact_id}/download` downloads an
+  artifact through its server-generated ID; callers cannot supply filesystem
+  paths.
+
+Local repository paths must be beneath `ALLOWED_LOCAL_REPOSITORY_ROOTS`.
+GitHub access continues to use the configured host allowlist and restricted
+clone adapter. Managed workspaces are removed after analysis. Set
+`REPORT_ARTIFACT_DIRECTORY` to choose where exported files are stored; the
+default is `rag_data/reports`.
+
+The report/artifact registry is in-memory and scoped to one application process.
+Restarting the process invalidates API references; multi-worker deployments
+require shared persistence and artifact storage. The API does not provide
+authentication or authorization, so deploy it only behind an appropriately
+restricted boundary until those controls are implemented.
+
 
 <!-- Phase 5 — Enterprise Security and Governance
 

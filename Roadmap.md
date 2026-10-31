@@ -18,14 +18,14 @@ Project roadmap
    - Semantic retrieval
    - Context-aware responses
    - Source references
-4. Phase 4 — MCP & Tools -   Current phase
+4. Phase 4 — MCP & Tools -   Complete
    - Function and tool calling
    - Typed tool contracts
    - MCP server and client integration
    - Tool discovery and invocation
    - Agent-as-tool and delegation
    - Human approval and safe tool execution
-   - Repository investigation and architecture reporting (Phase 4.6)
+   - Repository investigation and architecture reporting (Phase 4.6) - Complete
 5. Phase 5 — Enterprise Security
    - Authentication and authorization
    - Role-based access control
@@ -57,7 +57,7 @@ Milestone	| Name	| 	Scope	|  Status
 4	| 	Architecture Synthesis	| 	Unified architecture model: components, relationships and data flows	| 	Complete
 5	| 	Architecture Review	| Evaluate architecture findings, identify risks, gaps and improvement recommendations	| 	Complete
 6	| 	Report Export	| 	Markdown, HTML, PDF and DOCX from one validated report model	| 	Complete
-7	| 	API & End-to-End Validation	| 	Repository analysis API, report download, error handling, integration and regression tests	| 	Next
+7	| 	API & End-to-End Validation	| 	Repository analysis API, report download, error handling, integration and regression tests	| 	Complete
 
 Milestone details and acceptance criteria
 Milestone 4 — Architecture Synthesis
@@ -90,3 +90,9 @@ Milestone 7 — API & End-to-End Validation
 - Integration tests.
 - Regression tests.
 Acceptance: A complete repository-to-report workflow works through the application API.
+
+Phase 4.6 acceptance: All seven milestones are complete. The repository analysis API
+composes the existing local/GitHub adapters, static analysis, visualization,
+synthesis, review, validated report generation, export, and managed artifact
+downloads. Report and artifact references are process-local; persistent shared
+storage and API authentication remain future production requirements.

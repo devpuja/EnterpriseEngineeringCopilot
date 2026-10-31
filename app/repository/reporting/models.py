@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from app.repository.analysis.models import EvidenceReference
 from app.repository.review.models import ArchitectureReviewResult
@@ -18,6 +18,8 @@ class ReportFormat(str, Enum):
 
 
 class ReportConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     selected_diagram_types: list[str] = Field(default_factory=list)
     include_sections: list[str] = Field(default_factory=list)

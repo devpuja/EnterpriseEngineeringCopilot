@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     mcp_timeout_seconds: float = Field(default=15.0, gt=0, description="Timeout for MCP server requests in seconds.")
 
     repository_workspace_root: str = "rag_data/repositories"
+    report_artifact_directory: str = "rag_data/reports"
     allowed_local_repository_roots: list[str] = Field(default_factory=list)
     maximum_repository_size_bytes: int = 1_073_741_824
     maximum_repository_file_size_bytes: int = 10_485_760
