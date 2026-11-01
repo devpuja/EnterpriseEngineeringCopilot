@@ -157,7 +157,9 @@ finally:
     thread.join(timeout=5)
     sock.close()
     assert not thread.is_alive()
-_provider.shutdown()
+from app.observability.telemetry import shutdown_telemetry
+shutdown_telemetry()
+shutdown_telemetry()
 print("Enabled HTTP/JWT/repository/export/download/native-MAF/MCP/usage/privacy checks passed.")
 '''
     environment = {
@@ -175,3 +177,37 @@ print("Enabled HTTP/JWT/repository/export/download/native-MAF/MCP/usage/privacy 
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "checks passed" in result.stdout
+
+
+def test_console_exporters_stop_before_stream_teardown(tmp_path):
+    script = r'''
+import threading
+from main import app
+from fastapi.testclient import TestClient
+from app.observability import telemetry
+workers = [
+    thread for thread in threading.enumerate()
+    if thread.name.startswith(("Otel", "OpenTelemetry"))
+]
+assert workers, "Expected SDK exporter workers."
+with TestClient(app) as client:
+    assert client.get("/health").status_code == 200
+telemetry.shutdown_telemetry()
+assert telemetry._shutdown_complete
+assert all(not worker.is_alive() for worker in workers)
+print("Console lifecycle clean.")
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ, "TELEMETRY_ENABLED": "true", "TELEMETRY_EXPORTER": "console",
+            "CHROMA_PERSIST_DIRECTORY": str(tmp_path / "chroma"),
+            "RAG_METADATA_DATABASE": str(tmp_path / "metadata.db"),
+        },
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Console lifecycle clean." in result.stdout
+    assert "copilot.operation" in result.stdout
+    assert "Logging error" not in result.stderr
+    assert "closed file" not in result.stderr

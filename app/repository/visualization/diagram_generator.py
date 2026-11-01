@@ -182,7 +182,10 @@ class DiagramGenerator:
         relationships: list[DiagramRelationship] = []
         node_refs: dict[str, list[str]] = {}
         relation_refs: dict[str, list[str]] = {}
-        limited, warning = self.layout.limit_items(analysis.dependencies)
+        # Each dependency emits two nodes, so budget findings in node pairs.
+        dependency_limit = self.layout.maximum_nodes // 2
+        limited = analysis.dependencies[:dependency_limit]
+        warning = len(analysis.dependencies) > len(limited)
         for index, dependency in enumerate(limited):
             source_id = self._stable_id("source", dependency.source, index)
             target_id = self._stable_id("target", dependency.target, index)
@@ -213,8 +216,12 @@ class DiagramGenerator:
                 f'    {source_id} -->|{self._label(relationship_type or "depends on")}| {target_id}'
             )
         if not relationships:
-            nodes = [DiagramNode(node_id="no_dependencies", label="No supported dependency findings")]
-            lines.append('    no_dependencies["No supported dependency findings"]')
+            empty_label = (
+                "No dependency relationships fit the diagram node budget"
+                if analysis.dependencies else "No supported dependency findings"
+            )
+            nodes = [DiagramNode(node_id="no_dependencies", label=empty_label)]
+            lines.append(f'    no_dependencies["{empty_label}"]')
         evidence_ids = sorted({e.evidence_id for node in nodes for e in node.evidence_references})
         return ArchitectureDiagram(
             diagram_id="project_dependencies",
@@ -226,8 +233,11 @@ class DiagramGenerator:
             relationships=relationships,
             evidence_references=evidence_ids,
             evidence_map=self.evidence_mapper.evidence_map(analysis, node_refs, relation_refs),
-            generation_warnings=["No supported dependency findings were identified."] if not relationships else (
-                ["Diagram limited to the first 30 dependency findings."] if warning else []
+            generation_warnings=(
+                [f"Diagram limited to the first {dependency_limit} dependency findings "
+                 f"to respect the {self.layout.maximum_nodes}-node complexity limit."]
+                if warning else ["No supported dependency findings were identified."]
+                if not relationships else []
             ),
         )
 

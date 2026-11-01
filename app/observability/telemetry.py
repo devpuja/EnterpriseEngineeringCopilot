@@ -3,6 +3,7 @@ import logging
 from contextlib import contextmanager
 from functools import wraps
 from time import perf_counter
+from threading import Lock
 from typing import Callable, Iterator, ParamSpec, Sequence, TypeVar, cast
 
 from opentelemetry import trace
@@ -26,6 +27,8 @@ P = ParamSpec("P")
 R = TypeVar("R")
 _provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
+_shutdown_lock = Lock()
+_shutdown_complete = False
 _SAFE_ATTRIBUTES = frozenset({
     "operation", "outcome", "error.type", "http.request.method",
     "http.response.status_code", "http.route", "gen_ai.operation.name",
@@ -124,6 +127,30 @@ def configure_telemetry() -> None:
     )
     metrics.set_meter_provider(_meter_provider)
     enable_instrumentation(enable_sensitive_data=False, enable_message_events=False, force=True)
+
+
+def shutdown_telemetry() -> None:
+    """Stop process-owned exporters before their output streams are closed."""
+    global _shutdown_complete
+    with _shutdown_lock:
+        if _shutdown_complete:
+            return
+        if _provider is None and _meter_provider is None:
+            return
+        _shutdown_complete = True
+        for name, provider in (("metrics", _meter_provider), ("traces", _provider)):
+            if provider is None:
+                continue
+            try:
+                if not provider.force_flush(timeout_millis=3000):
+                    logger.warning("event=telemetry_flush_failed component=%s", name)
+            except Exception as exc:
+                logger.warning("event=telemetry_flush_failed error_type=%s", type(exc).__name__)
+            finally:
+                try:
+                    provider.shutdown()
+                except Exception as exc:
+                    logger.warning("event=telemetry_shutdown_failed error_type=%s", type(exc).__name__)
 
 
 @contextmanager

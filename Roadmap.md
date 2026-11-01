@@ -44,7 +44,7 @@ Project roadmap
    - 6.6	RAG Evaluation & Retrieval Quality - Implemented
    - 6.7	AI Guardrails & Output Quality - Implemented
    - 6.8	GenAIOps Integration & Operational Readiness - Implemented
-   - Validation: 366 passed, 5 skipped; production Azure operations remain Phase 7
+   - Validation: 373 passed, 5 skipped with console telemetry enabled; production Azure operations remain Phase 7
 7. Phase 7 — Production / Azure
    - Azure deployment architecture
    - Production configuration

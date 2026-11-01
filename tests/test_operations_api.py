@@ -24,8 +24,17 @@ def test_owner_scoped_summary_and_estimated_subtotals(monkeypatch):
         store.record("usage", provider="synthetic", model="fixture",
                      usage={"source":"unavailable","input_tokens":None,"output_tokens":None},
                      cost={"status":"unavailable"})
+        for hard in (False, False, True):
+            store.record("quality", summary={
+                "gate": "diagram.validity", "status": "failed",
+                "hard": hard, "category": "invalid_diagram",
+            })
     with bind_context(owner_id=bob.owner_id):
         store.record("operation", operation="private_bob_operation", duration_ms=1, outcome="success")
+        store.record("quality", summary={
+            "gate": "private_bob_gate", "status": "failed", "hard": True,
+            "category": "private_bob_category",
+        })
     previous = app.dependency_overrides[get_current_principal]
     try:
         app.dependency_overrides[get_current_principal] = lambda: alice
@@ -38,6 +47,13 @@ def test_owner_scoped_summary_and_estimated_subtotals(monkeypatch):
         assert data["usage"][0]["unavailable_cost_calls"] == 1
         assert "private_bob" not in response.text
         assert "owner_id" not in response.text
+        assert data["quality_failures"] == 3
+        assert data["advisory_quality_failures"] == 2
+        assert data["blocking_quality_failures"] == 1
+        assert data["quality_failure_details"] == [
+            {"gate": "diagram.validity", "category": "invalid_diagram", "blocking": False, "count": 2},
+            {"gate": "diagram.validity", "category": "invalid_diagram", "blocking": True, "count": 1},
+        ]
         app.dependency_overrides[get_current_principal] = lambda: bob
         assert "rag.retrieve" not in TestClient(app).get("/api/v1/operations/summary").text
     finally:

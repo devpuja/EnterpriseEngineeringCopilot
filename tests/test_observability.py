@@ -119,6 +119,35 @@ def test_disabled_instrumentation_and_exporter_failure(monkeypatch):
     assert telemetry.SafeSpanExporter(BrokenExporter()).export([]) == SpanExportResult.FAILURE
 
 
+def test_shutdown_flush_order_idempotence_and_failure_cleanup(monkeypatch):
+    from app.observability import telemetry
+    calls = []
+
+    class Provider:
+        def __init__(self, name, fail=False):
+            self.name, self.fail = name, fail
+
+        def force_flush(self, timeout_millis):
+            assert timeout_millis == 3000
+            calls.append((self.name, "flush"))
+            if self.fail:
+                raise ConnectionError("synthetic exporter failure")
+            return True
+
+        def shutdown(self):
+            calls.append((self.name, "shutdown"))
+
+    monkeypatch.setattr(telemetry, "_shutdown_complete", False)
+    monkeypatch.setattr(telemetry, "_meter_provider", Provider("metrics", fail=True))
+    monkeypatch.setattr(telemetry, "_provider", Provider("traces"))
+    telemetry.shutdown_telemetry()
+    telemetry.shutdown_telemetry()
+    assert calls == [
+        ("metrics", "flush"), ("metrics", "shutdown"),
+        ("traces", "flush"), ("traces", "shutdown"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_inbound_trace_context_and_http_failure(monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider

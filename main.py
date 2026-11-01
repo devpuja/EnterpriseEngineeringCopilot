@@ -12,7 +12,7 @@ from app.api.operations import router as operations_router
 from app.config.settings import settings
 from app.observability.logging import configure_logging
 from app.observability.middleware import RequestContextMiddleware
-from app.observability.telemetry import configure_telemetry
+from app.observability.telemetry import configure_telemetry, shutdown_telemetry
 
 configure_logging(settings.log_level, settings.log_format)
 configure_telemetry()
@@ -20,12 +20,10 @@ configure_telemetry()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
-    from app.observability.telemetry import _provider, _meter_provider
-    if _provider is not None:
-        await asyncio.to_thread(_provider.force_flush, 3000)
-    if _meter_provider is not None:
-        await asyncio.to_thread(_meter_provider.force_flush, 3000)
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(shutdown_telemetry)
 
 app = FastAPI(
     lifespan=lifespan,

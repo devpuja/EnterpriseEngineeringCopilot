@@ -43,11 +43,14 @@ if __name__ == "__main__":
     import uvicorn
     from app.config.settings import settings
     from app.observability.logging import configure_logging
-    from app.observability.telemetry import configure_telemetry
+    from app.observability.telemetry import configure_telemetry, shutdown_telemetry
     from app.observability.middleware import RequestContextMiddleware
 
     configure_logging(settings.log_level, settings.log_format)
     configure_telemetry()
     application = mcp_server.streamable_http_app(stateless_http=True)
     application.add_middleware(RequestContextMiddleware)
-    uvicorn.run(application, host="127.0.0.1", port=8001)
+    try:
+        uvicorn.run(application, host="127.0.0.1", port=8001)
+    finally:
+        shutdown_telemetry()

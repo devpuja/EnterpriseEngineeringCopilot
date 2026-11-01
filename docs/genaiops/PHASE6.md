@@ -44,6 +44,12 @@ HTTP transport. The local MCP entry point serves stateless Streamable HTTP on
 loopback port 8001 with request instrumentation and its native lifespan.
 Disabled telemetry preserves the existing client transport. Discovery and
 read-only tools retain their existing contracts; credentials are not forwarded.
+Telemetry is process-owned and configured once. FastAPI lifespan teardown and
+the standalone MCP server's final cleanup flush and shut down SDK providers;
+cleanup is idempotent. Pytest also performs session teardown before capture
+streams close. Console export remains enabled during normal local operation.
+Start a new process after application shutdown rather than reusing shut-down
+global SDK providers.
 
 The repository workflow is deterministic: retrieval -> analysis -> visualization
 -> synthesis -> review -> report. The separate MAF workflow executes requirements
@@ -158,6 +164,11 @@ The shared 1000-record process-local buffer is bounded, not durable or complete;
 SDK retries not observed by application middleware are not invented.
 Standalone CLI evaluations run without an API owner and are not exposed to users.
 No raw prompts, answers, dataset cases, documents, paths or owner IDs are returned.
+`quality_failures` remains the total failed checks. Additive
+`blocking_quality_failures` and `advisory_quality_failures` distinguish hard
+gates from warnings. `quality_failure_details` groups only safe gate/category,
+blocking flag and count; report warnings supply specific diagram-validation
+reasons. Advisory checks can fail while all workflow operations succeed.
 
 ### Local walkthrough
 
@@ -178,7 +189,8 @@ No raw prompts, answers, dataset cases, documents, paths or owner IDs are return
 ### Final verification
 
 - Pre-Phase 6 baseline: **338 passed, 5 skipped**.
-- Final regression: **366 passed, 5 skipped**.
+- Targeted closure regression with console telemetry enabled: **373 passed, 5 skipped**.
+- Telemetry-disabled full regression: **373 passed, 5 skipped**.
 - Final focused hardening checks: **25 passed**.
 - Python compilation and `git diff --check` passed.
 - Isolated enabled-telemetry integration verifies HTTP/JWT, repository stages,
@@ -189,6 +201,29 @@ No raw prompts, answers, dataset cases, documents, paths or owner IDs are return
   **12/12 synthetic scenarios**. These are local contract tests, not live-model
   quality benchmarks.
 - No configured lint/type-check runner was found; no such result is claimed.
+
+### Targeted closure investigation
+
+Console export workers previously outlived pytest capture streams. Flushing
+without shutting down left the metric ticker and span processor running.
+Explicit provider shutdown and pytest session cleanup now stop those workers;
+the console-enabled full regression has no closed-stream logging errors.
+Lifecycle focused checks: **11 passed**. Quality/operations/visualization/workflow
+focused checks: **35 passed**.
+
+The original historical quality record was unavailable. Recreating
+`https://github.com/devpuja/Agents/tree/main/agent-project` reproduced exactly
+one failure: `diagram.validity`, category `invalid_diagram`, `hard=false`.
+The `project_dependencies` diagram exceeded the 30-node complexity limit.
+The generator limited dependency findings to 30, although each finding emits
+two nodes. Generation correctly continued under the configured advisory policy.
+
+The generator now budgets dependency findings in node pairs: at the default
+limit it includes 15 findings, emits at most 30 nodes, and retains a truncation
+warning. Validation was not weakened; real invalid diagrams still warn or block
+according to `DIAGRAM_REQUIRE_VALID`. Repeating the same GitHub report after
+the fix produced **zero quality failures**. This reproduces the observed issue;
+it is not a recovered historical log or a benchmark of live-model quality.
 
 The existing environment has an unrelated dependency conflict:
 `agent-framework-foundry-hosting 1.0.0b261015` requires `mcp<2,>=1.24.0`,

@@ -2,7 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.observability.metrics import operational_store
 from app.observability.models import (
@@ -34,6 +34,13 @@ class UsageSummary(BaseModel):
     estimated_cost_subtotals: dict[str, Decimal]
 
 
+class QualityFailureSummary(BaseModel):
+    gate: str
+    category: str | None
+    blocking: bool
+    count: int
+
+
 class OperationsSummary(BaseModel):
     minutes: int
     scope: str = "current_owner"
@@ -44,6 +51,9 @@ class OperationsSummary(BaseModel):
     evaluation_runs: int
     evaluation_failures: int
     quality_failures: int
+    blocking_quality_failures: int = 0
+    advisory_quality_failures: int = 0
+    quality_failure_details: list[QualityFailureSummary] = Field(default_factory=list)
 
 
 @router.get("/summary", response_model=OperationsSummary)
@@ -84,13 +94,25 @@ def get_operations_summary(
             estimated_cost_subtotals=dict(totals),
         ))
     evaluations = [row.summary for row in records if isinstance(row, EvaluationObservation)]
+    quality_failures = [
+        row.summary for row in records
+        if isinstance(row, QualityObservation) and row.summary.status == "failed"
+    ]
+    quality_counts: dict[tuple[str, str | None, bool], int] = defaultdict(int)
+    for failure in quality_failures:
+        quality_counts[(failure.gate, failure.category, failure.hard)] += 1
     return OperationsSummary(
         minutes=minutes, operations=operations, usage=usage,
         retries=sum(isinstance(row, RetryObservation) for row in records),
         evaluation_runs=len(evaluations),
         evaluation_failures=sum(run.failed + run.errors for run in evaluations),
-        quality_failures=sum(
-            row.summary.status == "failed"
-            for row in records if isinstance(row, QualityObservation)
-        ),
+        quality_failures=len(quality_failures),
+        blocking_quality_failures=sum(failure.hard for failure in quality_failures),
+        advisory_quality_failures=sum(not failure.hard for failure in quality_failures),
+        quality_failure_details=[
+            QualityFailureSummary(gate=gate, category=category, blocking=hard, count=count)
+            for (gate, category, hard), count in sorted(
+                quality_counts.items(), key=lambda item: (item[0][0], item[0][1] or "", item[0][2]),
+            )
+        ],
     )
