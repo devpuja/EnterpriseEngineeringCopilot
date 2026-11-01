@@ -36,3 +36,32 @@ Payload:
     ]
   }
 }
+
+
+{
+  "source_type": "github",
+  "source_reference": "https://github.com/devpuja/Agents/tree/main/agent-project",
+  "branch": "main",
+  "configuration": {
+    "title": "Agent",
+    "selected_diagram_types": [
+      "system_context"
+    ],
+    "include_sections": [
+      "cover",
+	"executive_summary",
+      "architecture_diagrams",
+      "api_architecture"
+    ],
+    "include_evidence": true,
+    "include_confidence": true,
+    "include_limitations": true,
+    "include_mermaid_source": true,
+    "include_rendered_diagrams": true,
+    "output_format": "pdf",
+    "organization_name": "Enterprise Engineering Copilot API ",
+    "project_name": "EnterpriseEngineeringCopilotAPI",
+    "report_version": "1.0",
+    "maximum_diagram_nodes": 30
+  }
+}

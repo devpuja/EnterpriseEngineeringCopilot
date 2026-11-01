@@ -144,8 +144,7 @@ class FileDiscovery:
                     raise
                 except (PermissionError, OSError):
                     logger.warning(
-                        "event=repository_file_discovery_unreadable relative_path=%s",
-                        relative.as_posix(),
+                        "event=repository_file_discovery_unreadable",
                     )
                     continue
 

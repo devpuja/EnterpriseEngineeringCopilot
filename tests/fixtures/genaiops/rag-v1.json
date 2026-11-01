@@ -1,0 +1,11 @@
+[
+  {"case_id":"obvious","query":"API boundary","judgments":{"api":3,"db":0},"retrieved_ids":["api"]},
+  {"case_id":"multiple-chunks","query":"API and database","judgments":{"api":3,"db":2},"retrieved_ids":["api","db"]},
+  {"case_id":"multiple-documents","query":"ownership and backups","judgments":{"security":3,"operations":3},"retrieved_ids":["operations","security"]},
+  {"case_id":"partial","query":"architecture","judgments":{"api":3,"irrelevant":0,"db":2},"retrieved_ids":["irrelevant","api"]},
+  {"case_id":"no-relevant","query":"unrelated question","judgments":{"api":0},"retrieved_ids":[]},
+  {"case_id":"ambiguous","query":"service","judgments":{"api":1,"worker":2},"retrieved_ids":["api","worker"]},
+  {"case_id":"missing-metadata","query":"unknown source","judgments":null,"retrieved_ids":["unknown"]},
+  {"case_id":"conflicting-evidence","query":"deployment","judgments":{"old":1,"new":3},"retrieved_ids":["old","new"]},
+  {"case_id":"insufficient","query":"unknown architecture","judgments":{"expected":3},"retrieved_ids":[]}
+]

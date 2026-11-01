@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from app.observability.telemetry import observed
 from pathlib import Path
 import re
 from typing import Any
@@ -25,6 +26,7 @@ class ReportGenerator:
     def __init__(self, report_sections: ReportSections | None = None):
         self.report_sections = report_sections or ReportSections()
 
+    @observed("report.generate")
     def generate(
         self,
         analysis: RepositoryAnalysisResult,

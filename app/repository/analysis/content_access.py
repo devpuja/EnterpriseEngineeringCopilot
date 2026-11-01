@@ -37,7 +37,7 @@ class SnapshotContentReader:
             return None
         limit = max_bytes or settings.maximum_repository_file_size_bytes
         if file.size_bytes > limit:
-            logger.warning("event=analysis_file_skipped reason=size_limit relative_path=%s", file.relative_path)
+            logger.warning("event=analysis_file_skipped reason=size_limit")
             return None
         try:
             root = self.repository_root(snapshot).resolve(strict=True)

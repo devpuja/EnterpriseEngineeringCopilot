@@ -2,7 +2,12 @@ import time
 from abc import ABC, abstractmethod
 from typing import Sequence
 
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, APITimeoutError, RateLimitError, InternalServerError
+import logging
+from app.observability.telemetry import observed
+from app.observability.usage import record_usage
+from app.observability.metrics import record_retry
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -31,8 +36,9 @@ class OpenAIEmbeddingService(EmbeddingProvider):
             raise EmbeddingServiceError("OPENAI_EMBEDDING_MODEL is required.")
         self.model = model
         self.max_retries = max_retries
-        self._client = OpenAI(api_key=api_key, timeout=timeout_seconds)
+        self._client = OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=0)
 
+    @observed("llm.embedding")
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -49,6 +55,7 @@ class OpenAIEmbeddingService(EmbeddingProvider):
                     model=self.model,
                     input=list(cleaned),
                 )
+                record_usage(response, "openai", self.model, embedding=True)
                 vectors = [item.embedding for item in response.data]
                 if len(vectors) != len(cleaned):
                     raise EmbeddingServiceError(
@@ -64,8 +71,13 @@ class OpenAIEmbeddingService(EmbeddingProvider):
                 raise
             except Exception as exc:
                 last_error = exc
+                if not isinstance(exc, (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError)):
+                    logger.warning("event=embedding_permanent_failure error_type=%s", type(exc).__name__)
+                    break
                 if attempt >= self.max_retries:
                     break
+                record_retry("llm.embedding")
+                logger.warning("event=embedding_retry attempt=%d error_type=%s", attempt + 1, type(exc).__name__)
                 time.sleep(min(0.25 * (2 ** attempt), 2.0))
 
         raise EmbeddingServiceError(

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from app.observability.telemetry import observed
 from uuid import uuid4
 
 from app.repository.analysis.models import ConfidenceLevel, RepositoryAnalysisResult
@@ -128,6 +129,7 @@ class ArchitectureReviewService:
             ))
         return strengths
 
+    @observed("repository.review")
     def review(
         self,
         synthesis: ArchitectureSynthesisResult,

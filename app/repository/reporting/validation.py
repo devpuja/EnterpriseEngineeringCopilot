@@ -1,5 +1,6 @@
 from pathlib import PurePosixPath, PureWindowsPath
 from datetime import datetime
+from app.observability.telemetry import observed
 
 from app.repository.reporting.identifiers import SECTION_ORDER, SUPPORTED_DIAGRAM_TYPES
 from app.repository.reporting.models import ArchitectureReport, ReportConfiguration
@@ -44,6 +45,13 @@ def validate_configuration(configuration: ReportConfiguration) -> None:
 
 
 def validate_report(report: ArchitectureReport, require_marked: bool = False) -> None:
+    from app.evaluation.quality import validation_gate
+    with validation_gate("report.validity"):
+        _validate_report(report, require_marked)
+
+
+@observed("quality.report")
+def _validate_report(report: ArchitectureReport, require_marked: bool = False) -> None:
     validate_configuration(report.configuration)
     if not report.repository_name.strip():
         raise ReportValidationError("repository_name: value is required.")

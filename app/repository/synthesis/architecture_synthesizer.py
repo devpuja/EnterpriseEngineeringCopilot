@@ -1,4 +1,5 @@
 import hashlib
+from app.observability.telemetry import observed
 import html
 import re
 from datetime import datetime, timezone
@@ -58,6 +59,7 @@ class ArchitectureSynthesizer:
             return ConfidenceLevel.medium
         return fallback if not levels else ConfidenceLevel.low
 
+    @observed("repository.synthesize")
     def synthesize(
         self,
         analysis: RepositoryAnalysisResult,

@@ -1,4 +1,5 @@
 import asyncio
+from app.observability.telemetry import observed
 import ipaddress
 import os
 import re
@@ -141,6 +142,7 @@ class GitHubRepositoryAdapter(BaseRepositoryAdapter):
         except subprocess.CalledProcessError as exc:
             raise RepositoryNotFoundError("Repository could not be cloned from GitHub.") from exc
 
+    @observed("repository.retrieve_github")
     async def retrieve(
         self,
         source_reference: str,

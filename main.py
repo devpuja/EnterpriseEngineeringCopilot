@@ -1,4 +1,5 @@
-import logging
+from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 
@@ -7,18 +8,27 @@ from app.api.rag import router as rag_router
 from app.api.engineering_tools import router as engineering_tools_router
 from app.api.approvals import router as approvals_router
 from app.api.repository_reports import router as repository_reports_router
+from app.api.operations import router as operations_router
 from app.config.settings import settings
-from app.security import SecretRedactionFilter
+from app.observability.logging import configure_logging
+from app.observability.middleware import RequestContextMiddleware
+from app.observability.telemetry import configure_telemetry
 
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    force=True,
-)
-for handler in logging.getLogger().handlers:
-    handler.addFilter(SecretRedactionFilter())
+configure_logging(settings.log_level, settings.log_format)
+configure_telemetry()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    from app.observability.telemetry import _provider, _meter_provider
+    if _provider is not None:
+        await asyncio.to_thread(_provider.force_flush, 3000)
+    if _meter_provider is not None:
+        await asyncio.to_thread(_meter_provider.force_flush, 3000)
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     version="0.4.0",
     description="An agentic AI copilot for software architecture analysis and decision support.",
@@ -33,12 +43,14 @@ app = FastAPI(
     ),
 )
 
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(architecture_router)
 app.include_router(rag_router)
 app.include_router(engineering_tools_router)
 app.include_router(approvals_router)
 app.include_router(repository_reports_router)
+app.include_router(operations_router)
 
 
 @app.get("/health")

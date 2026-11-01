@@ -21,6 +21,9 @@ from fastapi.security import (
 from jwt import PyJWKClient, PyJWKClientConnectionError, PyJWKClientError
 
 from app.config.settings import Settings, settings
+from app.observability.context import _context
+from app.observability.logging import log_event
+from app.observability.telemetry import observed
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +157,7 @@ def _validate_authentication_configuration() -> tuple[str, str, str]:
     return issuer, audience, jwks_url
 
 
+@observed("security.authenticate")
 def _decode_token(token: str) -> UserPrincipal:
     issuer, audience, jwks_url = _validate_authentication_configuration()
     signing_key = _jwks_client(jwks_url).get_signing_key_from_jwt(token)
@@ -221,13 +225,18 @@ async def get_current_principal(
         raise _authentication_failure("invalid_token") from exc
 
     audit_security_event("authentication_succeeded", principal=principal)
+    if _context.get().get("request_id"):
+        _context.set({**_context.get(), "actor": principal.audit_id, "owner_id": principal.owner_id})
     return principal
 
 
 def require_roles(*allowed_roles: Role) -> Callable[..., UserPrincipal]:
+    @observed("security.authorize")
     async def enforce_role(
         principal: Annotated[UserPrincipal, Depends(get_current_principal)],
     ) -> UserPrincipal:
+        if _context.get().get("request_id"):
+            _context.set({**_context.get(), "actor": principal.audit_id, "owner_id": principal.owner_id})
         if not principal.roles.intersection(allowed_roles):
             audit_security_event(
                 "authorization_denied",
@@ -250,9 +259,9 @@ def audit_security_event(
     resource_id: str | None = None,
     outcome: str = "success",
 ) -> None:
-    fields = [f"event={event}", f"outcome={outcome}"]
+    fields: dict[str, object] = {"outcome": outcome}
     if principal is not None:
-        fields.append(f"actor={principal.audit_id}")
+        fields["actor"] = principal.audit_id
     if resource_id is not None:
-        fields.append(f"resource_id={resource_id}")
-    logger.info(" ".join(fields))
+        fields["resource_id"] = resource_id
+    log_event(logger, event, **fields)

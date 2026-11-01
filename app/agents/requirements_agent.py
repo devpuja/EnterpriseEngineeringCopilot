@@ -1,6 +1,7 @@
 
 import json
 import logging
+from app.observability.telemetry import observed
 import re
 from typing import Any, cast
 
@@ -74,6 +75,7 @@ class RequirementsAnalysisAgent:
             )
         return self._agent
 
+    @observed("agent.requirements")
     async def analyze(self, requirements: str) -> RequirementAnalysis:
         """Convert a requirements description into a validated analysis."""
 
@@ -124,7 +126,7 @@ class RequirementsAnalysisAgent:
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.warning(
                 "Requirements analysis returned invalid structured output: %s",
-                exc,
+                type(exc).__name__,
             )
             raise ValueError(
                 "The model returned an invalid requirements analysis."

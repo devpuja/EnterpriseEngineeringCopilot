@@ -1,0 +1,1 @@
+"""Content-free application observability."""

@@ -19,5 +19,10 @@ openai>=3.0.0,<4
 python-multipart>=0.0.20,<1
 PyJWT[crypto]>=2.10,<3
 
+# Phase 6: explicitly declare the telemetry APIs used by the application.
+opentelemetry-api>=1.45,<2
+opentelemetry-sdk>=1.45,<2
+opentelemetry-exporter-otlp-proto-http>=1.45,<2
+
 # Phase 4.2 — MCP server
 mcp>=2.0.0,<3

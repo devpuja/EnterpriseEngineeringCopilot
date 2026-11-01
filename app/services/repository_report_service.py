@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from app.observability.telemetry import observed
 import mimetypes
 import threading
 from dataclasses import dataclass
@@ -98,6 +99,7 @@ class RepositoryReportService:
         self._artifacts: dict[UUID, tuple[UUID, ReportFormat, str, str, int]] = {}
         self._exports_in_progress: set[tuple[UUID, ReportFormat]] = set()
 
+    @observed("workflow.repository_report")
     async def create_report(
         self,
         source_type: str,
@@ -144,6 +146,7 @@ class RepositoryReportService:
             self._report_owners[report.report_id] = owner_id
         return analysis, report
 
+    @observed("report.read")
     def get_report(
         self,
         report_id: UUID,
@@ -158,6 +161,7 @@ class RepositoryReportService:
             raise ReportNotFoundError
         return report
 
+    @observed("report.export")
     async def export_report(
         self,
         report_id: UUID,
@@ -232,6 +236,7 @@ class RepositoryReportService:
             with self._lock:
                 self._exports_in_progress.discard(export_key)
 
+    @observed("artifact.resolve")
     def resolve_artifact(
         self,
         artifact_id: UUID,

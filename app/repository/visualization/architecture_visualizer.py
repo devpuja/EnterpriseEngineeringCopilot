@@ -1,4 +1,7 @@
 from datetime import datetime, timezone
+from app.observability.telemetry import observed
+from app.evaluation.quality import quality_gate
+from app.config.settings import settings
 
 from app.repository.analysis.models import RepositoryAnalysisResult
 from app.repository.visualization.diagram_generator import DiagramGenerator
@@ -23,6 +26,7 @@ class ArchitectureVisualizer:
         self.diagram_renderer = diagram_renderer or DiagramRenderer()
         self.maximum_nodes = maximum_nodes
 
+    @observed("repository.visualize")
     def visualize(
         self,
         analysis: RepositoryAnalysisResult,
@@ -34,6 +38,8 @@ class ArchitectureVisualizer:
 
         for diagram in diagrams:
             validation = self.diagram_validator.validate(diagram, analysis)
+            quality_gate("diagram.validity", validation.valid,
+                         hard=settings.diagram_require_valid, category="invalid_diagram")
             if not validation.valid:
                 diagram.generation_warnings.extend(validation.errors)
                 warnings.append(

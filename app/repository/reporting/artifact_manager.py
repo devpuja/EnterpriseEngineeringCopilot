@@ -1,4 +1,5 @@
 import re
+from app.observability.telemetry import observed
 import shutil
 import uuid
 from pathlib import Path
@@ -75,6 +76,7 @@ class ArtifactManager:
         directory = self.report_directory(report_id)
         return self._write_new(directory / filename, content)
 
+    @observed("artifact.persist")
     def _write_new(self, destination: Path, content: bytes) -> tuple[Path, str, int]:
         if len(content) > self.maximum_file_size_bytes:
             raise ValueError("Artifact exceeds the configured size limit.")

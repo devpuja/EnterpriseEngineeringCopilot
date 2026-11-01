@@ -1,5 +1,8 @@
 import json
 import logging
+from app.observability.telemetry import observed
+from app.evaluation.quality import quality_gate
+from app.config.settings import settings
 import re
 import unicodedata
 from dataclasses import dataclass, replace
@@ -271,6 +274,7 @@ class RAGService:
             raise DocumentIngestionError("Document storage path is unsafe.")
         return document_path
 
+    @observed("rag.ingest")
     async def ingest(
         self,
         filename: str,
@@ -362,7 +366,7 @@ class RAGService:
                         if path.is_file():
                             path.unlink(missing_ok=True)
                     document_directory.rmdir()
-            logger.warning("event=document_ingestion_failed filename=%s error=%s", filename, type(exc).__name__)
+            logger.warning("event=document_ingestion_failed error_type=%s", type(exc).__name__)
             raise
 
     def list_documents(self, owner_id: str | None = None) -> list[dict[str, Any]]:
@@ -484,12 +488,13 @@ class RAGService:
             included_chunks[key] = block[header_match.end():].strip()
         return included_chunks
 
-    async def answer(
+    @observed("rag.retrieve_pipeline")
+    def retrieve(
         self,
         question: str,
         top_k: int | None = None,
         owner_id: str | None = None,
-    ) -> RAGAnswer:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         question = question.strip()
         if len(question) < 3:
             raise ValueError("Question must contain at least 3 characters.")
@@ -507,6 +512,7 @@ class RAGService:
                 where={"owner_id": owner_id},
             )
         retrieved_chunk_count = len(results)
+        ranked_results = list(results)
         if hasattr(self.vectors, "get_neighbor_chunks") and results:
             if owner_id is None:
                 results = self.vectors.get_neighbor_chunks(
@@ -526,6 +532,17 @@ class RAGService:
             retrieved_chunk_count,
             len(results),
         )
+        return ranked_results, results
+
+    @observed("rag.answer")
+    async def answer(
+        self,
+        question: str,
+        top_k: int | None = None,
+        owner_id: str | None = None,
+    ) -> RAGAnswer:
+        question = question.strip()
+        _, results = self.retrieve(question, top_k, owner_id)
         if not results:
             return RAGAnswer(
                 answer="The indexed documents do not contain enough information to answer this question.",
@@ -598,6 +615,8 @@ class RAGService:
 
         document_ids = list(dict.fromkeys(source.document_id for source in sources if source.document_id))
         verified = validation.status == "verified"
+        quality_gate("rag.grounding", verified, hard=settings.rag_require_verified,
+                     category=validation.status)
         return RAGAnswer(
             answer=generated_answer,
             grounded=verified,

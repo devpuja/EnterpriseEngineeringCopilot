@@ -2,6 +2,9 @@
 """MCP client service for invoking engineering tools."""
 
 import asyncio
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+from app.observability.telemetry import observed
 import ipaddress
 import json
 import logging
@@ -14,6 +17,24 @@ from app.config.settings import settings
 from app.tools.diagram_validation import MAX_DIAGRAM_CHARS
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _connect_client() -> AsyncIterator[Client]:
+    if not settings.telemetry_enabled:
+        async with Client(settings.mcp_server_url) as client:
+            yield client
+        return
+    import httpx2
+    from mcp.client.streamable_http import streamable_http_client
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    headers: dict[str, str] = {}
+    TraceContextTextMapPropagator().inject(headers)
+    async with httpx2.AsyncClient(headers=headers) as http_client:
+        async with Client(streamable_http_client(
+            settings.mcp_server_url, http_client=http_client,
+        )) as client:
+            yield client
 
 ALLOWED_MCP_TOOLS: frozenset[str] = frozenset(
     {
@@ -80,6 +101,7 @@ def _validate_mcp_server_url(url: str) -> None:
     raise ValueError("MCP server must use a loopback HTTP endpoint.")
 
 
+@observed("mcp.validate_diagram")
 async def validate_architecture_diagram(
     diagram: Annotated[
         str,
@@ -102,7 +124,7 @@ async def validate_architecture_diagram(
 
     try:
         async with asyncio.timeout(settings.mcp_timeout_seconds):
-            async with Client(settings.mcp_server_url) as client:
+            async with _connect_client() as client:
                 result = await client.call_tool(
                     tool_name,
                     {"diagram": diagram},

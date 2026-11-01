@@ -1,0 +1,18 @@
+{
+  "name": "synthetic-repository-workflows",
+  "version": "1",
+  "cases": [
+    {"case_id":"small","input":"small","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"complex","input":"complex","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"limited-docs","input":"limited-docs","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"incomplete-evidence","input":"incomplete-evidence","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"ambiguous-dependencies","input":"ambiguous-dependencies","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"unsupported","input":"unsupported","reference":"completed","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"inaccessible","input":"inaccessible","reference":"RepositoryNotFoundError","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"partial-stage","input":"partial-stage","reference":"partial","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"provider-timeout","input":"provider-timeout","reference":"TimeoutError","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"invalid-agent-output","input":"invalid-agent-output","reference":"invalid_schema","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"invalid-source","input":"invalid-source","reference":"ReportValidationError","criteria":[{"metric":"normalized_match"}]},
+    {"case_id":"export-failure","input":"export-failure","reference":"ReportExportFailedError","criteria":[{"metric":"normalized_match"}]}
+  ]
+}

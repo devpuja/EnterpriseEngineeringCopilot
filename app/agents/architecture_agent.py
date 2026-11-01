@@ -2,6 +2,7 @@
 import json
 from typing import Any, cast
 import logging
+from app.observability.telemetry import observed
 
 from agent_framework import Agent
 from pydantic import BaseModel, ValidationError
@@ -365,6 +366,7 @@ class ArchitectureAgent:
             )
         return self._diagram_agent
 
+    @observed("agent.architecture")
     async def design(
         self,
         requirements: str,
@@ -505,7 +507,7 @@ class ArchitectureAgent:
                 except json.JSONDecodeError as exc:
                     logger.warning(
                         "Model returned invalid JSON: %s",
-                        exc,
+                        type(exc).__name__,
                     )
                     raise ValueError(
                         "The model did not return valid JSON."
@@ -538,8 +540,8 @@ class ArchitectureAgent:
 
             if diagram_errors:
                 logger.warning(
-                    "Architecture diagram validation failed; attempting one repair: %s",
-                    "; ".join(diagram_errors),
+                    "Architecture diagram validation failed; attempting one repair; error_count=%d",
+                    len(diagram_errors),
                 )
                 repaired_diagram = await self._repair_mermaid_diagram(
                     architecture_response=architecture_response,
@@ -557,8 +559,8 @@ class ArchitectureAgent:
                 )
                 if remaining_errors:
                     logger.warning(
-                        "Architecture diagram repair failed validation: %s",
-                        "; ".join(remaining_errors),
+                        "Architecture diagram repair failed validation; error_count=%d",
+                        len(remaining_errors),
                     )
                     raise ValueError(
                         "The model returned an invalid Mermaid diagram after one repair attempt."
@@ -571,7 +573,7 @@ class ArchitectureAgent:
         except ValidationError as exc:
             logger.warning(
                 "Architecture schema validation failed: %s",
-                exc,
+                type(exc).__name__,
             )
             raise ValueError(
                 "The model response does not match the architecture schema."

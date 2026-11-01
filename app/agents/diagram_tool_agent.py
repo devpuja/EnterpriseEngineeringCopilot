@@ -1,6 +1,7 @@
 """MAF agent that invokes the deterministic Mermaid validation tool."""
 
 from typing import Any
+from app.observability.telemetry import observed
 
 from agent_framework import Agent
 
@@ -39,6 +40,7 @@ class DiagramToolAgent:
             )
         return self._agent
 
+    @observed("agent.diagram")
     async def review_diagram(self, diagram: str) -> str:
         """Ask the model to invoke the validation tool and explain its result."""
         prompt = (

@@ -1,15 +1,26 @@
 from pathlib import Path
 from urllib.parse import urlparse
+from typing import Literal
 
 from pydantic import Field, model_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.observability.models import ModelPricing
 
 
 class Settings(BaseSettings):
     app_name: str
     app_env: str
     log_level: str
+    log_format: Literal["text", "json"] = "text"
+    telemetry_enabled: bool = False
+    telemetry_exporter: Literal["none", "console", "otlp"] = "none"
+    telemetry_sample_ratio: float = Field(default=1.0, ge=0, le=1)
+    telemetry_otlp_endpoint: str = ""
+    usage_enabled: bool = True
+    model_pricing: list[ModelPricing] = Field(default_factory=list)
+    rag_require_verified: bool = False
+    diagram_require_valid: bool = False
 
     model_provider: str = "openai"
     auth_issuer: str = ""
@@ -60,6 +71,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_swagger_oauth(self) -> "Settings":
+        self.log_level = self.log_level.upper()
+        if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR, or CRITICAL.")
+        pricing_keys = [(item.provider, item.model) for item in self.model_pricing]
+        if len(pricing_keys) != len(set(pricing_keys)):
+            raise ValueError("MODEL_PRICING must not contain duplicate provider/model entries.")
+        if self.telemetry_exporter == "otlp":
+            endpoint = urlparse(self.telemetry_otlp_endpoint)
+            if endpoint.scheme not in {"http", "https"} or not endpoint.hostname or endpoint.username or endpoint.password:
+                raise ValueError("TELEMETRY_OTLP_ENDPOINT must be an HTTP(S) URL without embedded credentials.")
         self.swagger_oauth_client_id = self.swagger_oauth_client_id.strip()
         self.swagger_oauth_scope = self.swagger_oauth_scope.strip()
         if not self.swagger_oauth_client_id and not self.swagger_oauth_scope:

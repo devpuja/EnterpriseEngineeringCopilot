@@ -1,0 +1,30 @@
+{
+  "name": "synthetic-responses",
+  "version": "1",
+  "cases": [
+    {
+      "case_id": "normalized-answer",
+      "input": "Name the isolation boundary.",
+      "output": "  API authorization  ",
+      "reference": "api authorization",
+      "criteria": [{"metric": "normalized_match"}]
+    },
+    {
+      "case_id": "requirements-structure",
+      "output": {
+        "functional_requirements": ["Upload documents"],
+        "non_functional_requirements": ["Isolate tenant documents"],
+        "assumptions": [],
+        "open_questions": [],
+        "constraints": []
+      },
+      "criteria": [{"metric": "schema", "schema_name": "requirements"}]
+    },
+    {
+      "case_id": "known-evidence",
+      "output": {"sources": ["synthetic-chunk-1"]},
+      "valid_sources": ["synthetic-chunk-1"],
+      "criteria": [{"metric": "sources"}]
+    }
+  ]
+}

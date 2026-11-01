@@ -142,6 +142,12 @@ user.
 
 ## Operational requirements
 
+Phase 6 adds a read-only `/api/v1/operations/summary` endpoint. It requires a
+recognized application role and returns only the caller's content-free,
+bounded process-local observations. It is not durable security audit storage.
+See [GenAIOps configuration](../genaiops/PHASE6.md) for telemetry privacy,
+evaluation limits, exporter settings and opt-in quality gates.
+
 Use HTTPS at the API boundary, protect local storage and backups, retain audit
 logs according to organizational policy, and avoid multi-worker deployments
 until report, artifact, approval, and ownership state is moved to shared

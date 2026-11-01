@@ -1,10 +1,12 @@
 from pathlib import Path
+from app.observability.telemetry import observed
 import re
 from html import escape
 
 from app.repository.reporting.artifact_manager import ArtifactManager
 from app.repository.reporting.exporters.base import (
     failed_export,
+    export_failed,
     get_artifact_manager,
     redact_sensitive_text,
     validate_export_report,
@@ -17,6 +19,7 @@ class MarkdownExporter:
     def __init__(self, artifact_manager: ArtifactManager | None = None):
         self.artifact_manager = artifact_manager
 
+    @observed("export.markdown", failed_result=export_failed)
     def export(self, report: ArchitectureReport, output_directory: Path) -> ReportExportResult:
         try:
             validate_export_report(report)

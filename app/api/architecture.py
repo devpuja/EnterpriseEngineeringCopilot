@@ -2,6 +2,7 @@
 import logging
 import time
 from uuid import uuid4
+from app.observability.context import current_context
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -27,7 +28,7 @@ async def design_architecture(
         require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
     ),
 ) -> ArchitectureResponse:
-    request_id = str(uuid4())
+    request_id = current_context().get("request_id", str(uuid4()))
     started_at = time.perf_counter()
     provider = settings.model_provider.lower()
     audit_security_event("agent_execution_started", principal=principal, resource_id=request_id)
@@ -122,7 +123,7 @@ async def design_architecture_delegated(
     ),
 ) -> ArchitectureResponse:
     """Generate architecture using parent-agent delegation."""
-    request_id = str(uuid4())
+    request_id = current_context().get("request_id", str(uuid4()))
     started_at = time.perf_counter()
     provider = settings.model_provider.lower()
     audit_security_event("agent_execution_started", principal=principal, resource_id=request_id)
@@ -182,7 +183,7 @@ async def design_architecture_delegated(
         )
         logger.warning(
             "event=delegated_architecture_generation_review_failed "
-            "request_id=%s review_status=failed error_type=%s error=%s",
+            "request_id=%s review_status=failed error_type=%s",
             request_id,
             type(exc).__name__,
         )

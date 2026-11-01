@@ -1,4 +1,5 @@
 from pathlib import Path
+from app.observability.telemetry import observed
 from typing import Any, cast
 
 import chromadb
@@ -114,6 +115,7 @@ class ChromaVectorStore:
 
         return [expanded[key] for key in sorted(expanded, key=lambda item: (item[0], item[1]))]
 
+    @observed("rag.retrieve")
     def search(
         self,
         embedding: list[float],

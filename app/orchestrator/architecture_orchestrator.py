@@ -1,5 +1,6 @@
 
 import logging
+from app.observability.telemetry import observed
 from dataclasses import dataclass
 from typing import Any, Never
 import time
@@ -338,6 +339,7 @@ class ArchitectureOrchestrator:
 
         return self._delegation_agent
 
+    @observed("workflow.delegated_architecture")
     async def design_with_delegation(
         self,
         requirements: str,
@@ -452,6 +454,7 @@ class ArchitectureOrchestrator:
             .build()
         )
 
+    @observed("workflow.architecture")
     async def design(
         self,
         requirements: str,

@@ -3,6 +3,11 @@ AI assistant for software architects, senior developers, and engineering teams.
 
 ## Run configuration
 
+Phase 6 configuration and verification: [GenAIOps](docs/genaiops/PHASE6.md).
+Phase 6 provides content-free structured logs, optional OpenTelemetry,
+provider usage/configured cost estimates, deterministic evaluation and
+owner-scoped `GET /api/v1/operations/summary`. Local telemetry needs no backend.
+
 Copy `.env.example` to `.env` and configure the model plus OIDC settings for
 your identity provider. The API validates RS256 bearer tokens against the
 configured issuer, audience, and JWKS endpoint; Microsoft Entra ID is supported.

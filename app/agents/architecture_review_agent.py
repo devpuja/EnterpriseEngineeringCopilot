@@ -1,6 +1,7 @@
 
 import json
 import logging
+from app.observability.telemetry import observed
 import re
 from typing import Any, cast
 
@@ -165,6 +166,7 @@ class ArchitectureReviewAgent:
             ) from exc
             
 
+    @observed("agent.review")
     async def review(self, response: ArchitectureResponse) -> ArchitectureReview:
         logger.info("event=architecture_review_started")
 

@@ -67,6 +67,10 @@ def failed_export(
     )
 
 
+def export_failed(result: object) -> bool:
+    return isinstance(result, ReportExportResult) and result.export_status == "failed"
+
+
 def get_artifact_manager(
     report: ArchitectureReport,
     output_directory: Path,

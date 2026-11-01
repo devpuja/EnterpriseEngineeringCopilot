@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from app.observability.telemetry import observed
 
 from app.repository.analysis.api_analyzer import APIAnalyzer
 from app.repository.analysis.architecture_pattern_detector import ArchitecturePatternDetector
@@ -30,6 +31,7 @@ class RepositoryAnalyzer:
         self.integration_analyzer = IntegrationAnalyzer()
         self.pattern_detector = ArchitecturePatternDetector()
 
+    @observed("repository.analyze")
     def analyze(self, snapshot: RepositorySnapshot) -> RepositoryAnalysisResult:
         evidence = EvidenceCollector()
         warnings: list[str] = []
@@ -104,8 +106,7 @@ class RepositoryAnalyzer:
             f"{len(api_endpoints)} API route/client findings, and {len(patterns)} architectural pattern results."
         )
         logger.info(
-            "event=repository_analysis_completed repository_name=%s technologies=%s findings=%s",
-            snapshot.repository_name,
+            "event=repository_analysis_completed technologies=%s findings=%s",
             len(technology_stack),
             len(evidence.items),
         )

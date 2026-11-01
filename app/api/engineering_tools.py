@@ -36,7 +36,7 @@ async def review_diagram(
         answer = await diagram_tool_agent.review_diagram(request.diagram)
         return DiagramToolResponse(answer=answer)
     except ValueError as exc:
-        logger.warning("Diagram tool agent returned an invalid response: %s", exc)
+        logger.warning("Diagram tool agent returned an invalid response: %s", type(exc).__name__)
         
         raise HTTPException(
             status_code=502,

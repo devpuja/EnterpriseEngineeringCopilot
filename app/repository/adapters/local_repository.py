@@ -1,4 +1,5 @@
 import asyncio
+from app.observability.telemetry import observed
 import os
 import shutil
 import time
@@ -88,6 +89,7 @@ class LocalRepositoryAdapter(BaseRepositoryAdapter):
                 except (PermissionError, OSError):
                     continue
 
+    @observed("repository.retrieve_local")
     async def retrieve(
         self,
         source_reference: str,
