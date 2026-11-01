@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.api import engineering_tools
 from app.api.schemas import DiagramToolRequest, DiagramToolResponse
+from app.security import Role, UserPrincipal
 
 
 VALID_DIAGRAM = (
@@ -16,6 +17,11 @@ VALID_DIAGRAM = (
     '    client["Client"]\n'
     '    api["Application API"]\n'
     '    client --> api'
+)
+TEST_PRINCIPAL = UserPrincipal(
+    subject="test-user",
+    issuer="https://test-issuer.example",
+    roles=frozenset(Role),
 )
 
 
@@ -29,7 +35,8 @@ def test_timeout_returns_safe_504_response() -> None:
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(
                 engineering_tools.review_diagram(
-                    DiagramToolRequest(diagram=VALID_DIAGRAM)
+                    DiagramToolRequest(diagram=VALID_DIAGRAM),
+                    principal=TEST_PRINCIPAL,
                 )
             )
 
@@ -50,7 +57,8 @@ def test_unexpected_error_returns_safe_502_response() -> None:
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(
                 engineering_tools.review_diagram(
-                    DiagramToolRequest(diagram=VALID_DIAGRAM)
+                    DiagramToolRequest(diagram=VALID_DIAGRAM),
+                    principal=TEST_PRINCIPAL,
                 )
             )
 
@@ -75,7 +83,8 @@ def test_successful_validation_response_is_unchanged() -> None:
     ):
         response = asyncio.run(
             engineering_tools.review_diagram(
-                DiagramToolRequest(diagram=VALID_DIAGRAM)
+                DiagramToolRequest(diagram=VALID_DIAGRAM),
+                principal=TEST_PRINCIPAL,
             )
         )
 

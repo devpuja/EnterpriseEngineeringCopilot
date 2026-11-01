@@ -79,8 +79,15 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 150) -> list[st
     return chunks
 
 
-def stable_document_id(filename: str, content: bytes) -> str:
+def stable_document_id(
+    filename: str,
+    content: bytes,
+    owner_id: str | None = None,
+) -> str:
     digest = hashlib.sha256()
+    if owner_id is not None:
+        digest.update(owner_id.encode("utf-8", errors="replace"))
+        digest.update(b"\0")
     digest.update(filename.encode("utf-8", errors="replace"))
     digest.update(b"\0")
     digest.update(content)

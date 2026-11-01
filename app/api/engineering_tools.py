@@ -2,10 +2,16 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.agents.diagram_tool_agent import DiagramToolAgent
 from app.api.schemas import DiagramToolRequest, DiagramToolResponse
+from app.security import (
+    Role,
+    UserPrincipal,
+    audit_security_event,
+    require_roles,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +24,14 @@ diagram_tool_agent = DiagramToolAgent()
 
 
 @router.post("/diagram-review", response_model=DiagramToolResponse)
-async def review_diagram(request: DiagramToolRequest) -> DiagramToolResponse:
+async def review_diagram(
+    request: DiagramToolRequest,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER, Role.ANALYST)
+    ),
+) -> DiagramToolResponse:
     """Use the MAF function tool to validate and explain a Mermaid diagram."""
+    audit_security_event("tool_invocation", principal=principal, resource_id="validate_architecture_diagram")
     try:
         answer = await diagram_tool_agent.review_diagram(request.diagram)
         return DiagramToolResponse(answer=answer)

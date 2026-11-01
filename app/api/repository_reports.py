@@ -2,7 +2,7 @@ import logging
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -31,6 +31,12 @@ from app.services.repository_report_service import (
     ReportNotFoundError,
     RepositoryReportService,
     repository_report_service,
+)
+from app.security import (
+    Role,
+    UserPrincipal,
+    audit_security_event,
+    require_roles,
 )
 
 
@@ -127,6 +133,7 @@ def _artifact_responses(
 def _report_response(
     report: ArchitectureReport,
     service: RepositoryReportService,
+    owner_id: str | None = None,
 ) -> ReportSummaryResponse:
     return ReportSummaryResponse(
         report_id=report.report_id,
@@ -140,7 +147,9 @@ def _report_response(
             for diagram in report.diagrams
         ],
         warnings=report.warnings,
-        artifacts=_artifact_responses(service.artifact_summaries(report.report_id)),
+        artifacts=_artifact_responses(
+            service.artifact_summaries(report.report_id, owner_id=owner_id)
+        ),
     )
 
 
@@ -165,6 +174,9 @@ def _raise_repository_error(exc: Exception) -> None:
 async def analyze_repository(
     request: RepositoryAnalysisRequest,
     response: Response,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
 ) -> RepositoryAnalysisResponse:
     service = repository_report_service
     try:
@@ -173,15 +185,27 @@ async def analyze_repository(
             request.source_reference,
             request.branch,
             request.configuration,
+            owner_id=principal.owner_id,
+        )
+        audit_security_event(
+            "repository_analysis",
+            principal=principal,
+            resource_id=str(report.report_id),
         )
         response.headers["Location"] = f"/api/v1/repository-reports/{report.report_id}"
         return RepositoryAnalysisResponse(
             analysis=analysis,
-            report=_report_response(report, service),
+            report=_report_response(report, service, owner_id=principal.owner_id),
         )
+    except RepositorySecurityError as exc:
+        audit_security_event(
+            "repository_access_denied",
+            principal=principal,
+            outcome="denied",
+        )
+        _raise_repository_error(exc)
     except (
         InvalidRepositorySourceError,
-        RepositorySecurityError,
         RepositoryNotFoundError,
         RepositoryLimitExceededError,
         WorkspaceError,
@@ -214,10 +238,23 @@ async def analyze_repository(
 
 
 @router.get("/{report_id}", response_model=ReportSummaryResponse)
-def get_repository_report(report_id: UUID) -> ReportSummaryResponse:
+def get_repository_report(
+    report_id: UUID,
+    principal: UserPrincipal = Depends(
+        require_roles(
+            Role.ADMINISTRATOR,
+            Role.ARCHITECT,
+            Role.DEVELOPER,
+            Role.ANALYST,
+            Role.READ_ONLY,
+        )
+    ),
+) -> ReportSummaryResponse:
     service = repository_report_service
     try:
-        return _report_response(service.get_report(report_id), service)
+        report = service.get_report(report_id, owner_id=principal.owner_id)
+        audit_security_event("report_read", principal=principal, resource_id=str(report_id))
+        return _report_response(report, service, owner_id=principal.owner_id)
     except ReportNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Repository report not found.") from exc
 
@@ -230,10 +267,18 @@ def get_repository_report(report_id: UUID) -> ReportSummaryResponse:
 async def export_repository_report(
     report_id: UUID,
     request: ReportExportRequest,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
 ) -> ReportExportResponse:
     service = repository_report_service
     try:
-        result, artifacts = await service.export_report(report_id, request.format)
+        result, artifacts = await service.export_report(
+            report_id,
+            request.format,
+            owner_id=principal.owner_id,
+        )
+        audit_security_event("report_export", principal=principal, resource_id=str(report_id))
         return ReportExportResponse(
             report_id=report_id,
             format=request.format,
@@ -277,9 +322,24 @@ async def export_repository_report(
 
 
 @router.get("/artifacts/{artifact_id}/download")
-def download_repository_artifact(artifact_id: UUID) -> FileResponse:
+def download_repository_artifact(
+    artifact_id: UUID,
+    principal: UserPrincipal = Depends(
+        require_roles(
+            Role.ADMINISTRATOR,
+            Role.ARCHITECT,
+            Role.DEVELOPER,
+            Role.ANALYST,
+            Role.READ_ONLY,
+        )
+    ),
+) -> FileResponse:
     try:
-        path, filename, mime_type = repository_report_service.resolve_artifact(artifact_id)
+        path, filename, mime_type = repository_report_service.resolve_artifact(
+            artifact_id,
+            owner_id=principal.owner_id,
+        )
     except ArtifactNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Repository report artifact not found.") from exc
+    audit_security_event("artifact_download", principal=principal, resource_id=str(artifact_id))
     return FileResponse(path, media_type=mime_type, filename=filename)

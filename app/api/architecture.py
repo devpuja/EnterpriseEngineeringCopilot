@@ -3,11 +3,12 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.orchestrator.architecture_orchestrator import ArchitectureOrchestrator
 from app.api.schemas import ArchitectureRequest, ArchitectureResponse
 from app.config.settings import settings
+from app.security import Role, UserPrincipal, audit_security_event, require_roles
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,16 @@ architecture_agent = ArchitectureOrchestrator()
 
 
 @router.post("/design", response_model=ArchitectureResponse)
-async def design_architecture(request: ArchitectureRequest) -> ArchitectureResponse:
+async def design_architecture(
+    request: ArchitectureRequest,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
+) -> ArchitectureResponse:
     request_id = str(uuid4())
     started_at = time.perf_counter()
     provider = settings.model_provider.lower()
+    audit_security_event("agent_execution_started", principal=principal, resource_id=request_id)
 
     logger.info(
         "event=architecture_generation_started request_id=%s provider=%s",
@@ -35,6 +42,11 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
         response = await architecture_agent.design(
             requirements=request.requirements,
             model_provider=provider,
+        )
+        audit_security_event(
+            "agent_execution_completed",
+            principal=principal,
+            resource_id=request_id,
         )
 
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
@@ -50,18 +62,23 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
         return response
 
     except ValueError as exc:
+        audit_security_event(
+            "agent_execution_failed",
+            principal=principal,
+            resource_id=request_id,
+            outcome="failed",
+        )
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
 
         logger.warning(
             "event=architecture_generation_invalid_output "
             "request_id=%s provider=%s duration_ms=%.2f "
-            "error_type=%s error=%s",
+            "error_type=%s",
             request_id,
             provider,
             duration_ms,
             type(exc).__name__,
-            str(exc),
         )
 
 
@@ -71,6 +88,12 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
         ) from exc
 
     except Exception as exc:
+        audit_security_event(
+            "agent_execution_failed",
+            principal=principal,
+            resource_id=request_id,
+            outcome="failed",
+        )
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
 
         logger.exception(
@@ -94,11 +117,15 @@ async def design_architecture(request: ArchitectureRequest) -> ArchitectureRespo
 )
 async def design_architecture_delegated(
     request: ArchitectureRequest,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
 ) -> ArchitectureResponse:
     """Generate architecture using parent-agent delegation."""
     request_id = str(uuid4())
     started_at = time.perf_counter()
     provider = settings.model_provider.lower()
+    audit_security_event("agent_execution_started", principal=principal, resource_id=request_id)
 
     logger.info(
         "event=delegated_architecture_generation_started "
@@ -112,6 +139,11 @@ async def design_architecture_delegated(
             requirements=request.requirements,
             model_provider=provider,
         )
+        audit_security_event(
+            "agent_execution_completed",
+            principal=principal,
+            resource_id=request_id,
+        )
 
         logger.info(
             "event=delegated_architecture_generation_succeeded "
@@ -124,6 +156,12 @@ async def design_architecture_delegated(
         return response
 
     except ValueError as exc:
+        audit_security_event(
+            "agent_execution_failed",
+            principal=principal,
+            resource_id=request_id,
+            outcome="failed",
+        )
         logger.warning(
             "event=delegated_architecture_generation_invalid_output "
             "request_id=%s error_type=%s",
@@ -136,19 +174,33 @@ async def design_architecture_delegated(
         ) from exc
 
     except RuntimeError as exc:
+        audit_security_event(
+            "agent_execution_failed",
+            principal=principal,
+            resource_id=request_id,
+            outcome="failed",
+        )
         logger.warning(
             "event=delegated_architecture_generation_review_failed "
             "request_id=%s review_status=failed error_type=%s error=%s",
             request_id,
             type(exc).__name__,
-            str(exc),
         )
         raise HTTPException(
             status_code=502,
-            detail=str(exc),
+            detail=(
+                "Delegated architecture generation failed. "
+                "Check application logs."
+            ),
         ) from exc
 
     except Exception as exc:
+        audit_security_event(
+            "agent_execution_failed",
+            principal=principal,
+            resource_id=request_id,
+            outcome="failed",
+        )
         logger.exception(
             "event=delegated_architecture_generation_failed "
             "request_id=%s error_type=%s",

@@ -16,6 +16,7 @@ from app.repository.review import ArchitectureReviewService
 from app.repository.synthesis import ArchitectureSynthesizer
 from app.repository.visualization.architecture_visualizer import ArchitectureVisualizer
 from app.repository.visualization.models import DiagramType
+from app.security import Role, UserPrincipal, get_current_principal
 from tests.repository.visualization.test_milestone3_visualization import analysis_fixture
 
 
@@ -35,6 +36,17 @@ def generate_report(results, configuration):
     return ReportGenerator().generate(
         analysis, visualization, configuration, synthesis=synthesis, review=review
     )
+
+
+def authenticated_api_app():
+    app = FastAPI()
+    app.include_router(repository_reports.router)
+    app.dependency_overrides[get_current_principal] = lambda: UserPrincipal(
+        subject="test-user",
+        issuer="https://test-issuer.example",
+        roles=frozenset(Role),
+    )
+    return app
 
 
 @pytest.mark.parametrize("diagram_type", SUPPORTED_DIAGRAM_TYPES)
@@ -96,8 +108,7 @@ def test_empty_arrays_and_combined_selection_remain_backward_compatible(mileston
 def test_api_rejects_invalid_configuration_before_retrieval(monkeypatch, configuration, message, caplog):
     create_report = AsyncMock()
     monkeypatch.setattr(repository_reports.repository_report_service, "create_report", create_report)
-    app = FastAPI()
-    app.include_router(repository_reports.router)
+    app = authenticated_api_app()
     with TestClient(app) as client:
         response = client.post("/api/v1/repository-reports/analyses", json={
             "source_type": "github",
@@ -115,8 +126,7 @@ def test_api_rejects_invalid_configuration_before_retrieval(monkeypatch, configu
 def test_api_preserves_generation_validation_error(monkeypatch):
     create_report = AsyncMock(side_effect=ReportValidationError("sections: missing required section IDs api_architecture"))
     monkeypatch.setattr(repository_reports.repository_report_service, "create_report", create_report)
-    app = FastAPI()
-    app.include_router(repository_reports.router)
+    app = authenticated_api_app()
     with TestClient(app) as client:
         response = client.post("/api/v1/repository-reports/analyses", json={
             "source_type": "github", "source_reference": "https://github.com/devpuja/Agents",
@@ -126,18 +136,21 @@ def test_api_preserves_generation_validation_error(monkeypatch):
 
 
 def test_api_propagates_valid_combined_configuration(monkeypatch, milestone_results):
-    async def create_report(source_type, source_reference, branch, configuration):
+    async def create_report(source_type, source_reference, branch, configuration, owner_id):
         assert source_type == "github"
         assert source_reference.endswith("/tree/main/agent-project")
         assert branch == "main"
         assert configuration.selected_diagram_types == ["api", "unified_architecture"]
         assert configuration.include_sections == ["architecture_diagrams", "api_architecture"]
-        return milestone_results[0], generate_report(milestone_results, configuration)
+        assert owner_id
+        report = generate_report(milestone_results, configuration)
+        service._reports[report.report_id] = report
+        service._report_owners[report.report_id] = owner_id
+        return milestone_results[0], report
 
     service = repository_reports.repository_report_service
     monkeypatch.setattr(service, "create_report", create_report)
-    app = FastAPI()
-    app.include_router(repository_reports.router)
+    app = authenticated_api_app()
     with TestClient(app) as client:
         response = client.post("/api/v1/repository-reports/analyses", json={
             "source_type": "github",

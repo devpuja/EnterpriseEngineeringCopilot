@@ -94,6 +94,7 @@ class RepositoryReportService:
         self._artifact_manager: ArtifactManager | None = None
         self._lock = threading.RLock()
         self._reports: dict[UUID, ArchitectureReport] = {}
+        self._report_owners: dict[UUID, str | None] = {}
         self._artifacts: dict[UUID, tuple[UUID, ReportFormat, str, str, int]] = {}
         self._exports_in_progress: set[tuple[UUID, ReportFormat]] = set()
 
@@ -103,6 +104,7 @@ class RepositoryReportService:
         source_reference: str,
         branch: str | None,
         configuration: ReportConfiguration,
+        owner_id: str | None = None,
     ) -> tuple[RepositoryAnalysisResult, ArchitectureReport]:
         adapter = {
             "local": self.local_adapter,
@@ -139,12 +141,20 @@ class RepositoryReportService:
 
         with self._lock:
             self._reports[report.report_id] = report
+            self._report_owners[report.report_id] = owner_id
         return analysis, report
 
-    def get_report(self, report_id: UUID) -> ArchitectureReport:
+    def get_report(
+        self,
+        report_id: UUID,
+        owner_id: str | None = None,
+    ) -> ArchitectureReport:
         with self._lock:
             report = self._reports.get(report_id)
-        if report is None:
+            report_owner = self._report_owners.get(report_id)
+        if report is None or (
+            owner_id is not None and report_owner != owner_id
+        ):
             raise ReportNotFoundError
         return report
 
@@ -152,8 +162,9 @@ class RepositoryReportService:
         self,
         report_id: UUID,
         output_format: ReportFormat,
+        owner_id: str | None = None,
     ) -> tuple[ReportExportResult, list[ArtifactRecord]]:
-        report = self.get_report(report_id)
+        report = self.get_report(report_id, owner_id=owner_id)
         export_key = (report_id, output_format)
         with self._lock:
             if export_key in self._exports_in_progress or any(
@@ -221,17 +232,31 @@ class RepositoryReportService:
             with self._lock:
                 self._exports_in_progress.discard(export_key)
 
-    def resolve_artifact(self, artifact_id: UUID) -> tuple[Path, str, str]:
+    def resolve_artifact(
+        self,
+        artifact_id: UUID,
+        owner_id: str | None = None,
+    ) -> tuple[Path, str, str]:
         with self._lock:
             artifact = self._artifacts.get(artifact_id)
         if artifact is None:
             raise ArtifactNotFoundError
-        _, _, location, mime_type, _ = artifact
+        report_id, _, location, mime_type, _ = artifact
+        if owner_id is not None:
+            try:
+                self.get_report(report_id, owner_id=owner_id)
+            except ReportNotFoundError as exc:
+                raise ArtifactNotFoundError from exc
         manager = self._get_artifact_manager()
         path = self._safe_artifact_path(manager, location)
         return path, path.name, mime_type
 
-    def artifact_summaries(self, report_id: UUID) -> list[ArtifactRecord]:
+    def artifact_summaries(
+        self,
+        report_id: UUID,
+        owner_id: str | None = None,
+    ) -> list[ArtifactRecord]:
+        self.get_report(report_id, owner_id=owner_id)
         with self._lock:
             matches = [
                 (artifact_id, metadata)

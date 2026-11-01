@@ -20,6 +20,7 @@ class ChromaVectorStore:
         self,
         chunks: list[DocumentChunk],
         embeddings: list[list[float]],
+        owner_id: str | None = None,
     ) -> None:
         if len(chunks) != len(embeddings):
             raise ValueError("Each chunk must have one embedding.")
@@ -38,6 +39,7 @@ class ChromaVectorStore:
                     "filename": chunk.filename,
                     "chunk_index": chunk.chunk_index,
                     "page_number": chunk.page_number if chunk.page_number is not None else -1,
+                    **({"owner_id": owner_id} if owner_id is not None else {}),
                 }
                 for chunk in chunks
             ],
@@ -56,6 +58,7 @@ class ChromaVectorStore:
         self,
         results: list[dict[str, Any]],
         radius: int = 1,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Expand semantic hits with nearby chunks from the same document only."""
         expanded: dict[tuple[str, int], dict[str, Any]] = {}
@@ -76,10 +79,13 @@ class ChromaVectorStore:
                 neighbor_ids.append(stable_chunk_id(document_id, neighbor_index))
 
             try:
-                neighbors = self._collection.get(
-                    ids=neighbor_ids,
-                    include=["documents", "metadatas"],
-                )
+                get_options: dict[str, Any] = {
+                    "ids": neighbor_ids,
+                    "include": ["documents", "metadatas"],
+                }
+                if owner_id is not None:
+                    get_options["where"] = {"owner_id": owner_id}
+                neighbors = self._collection.get(**get_options)
             except Exception:
                 continue
 

@@ -1,5 +1,7 @@
 from pathlib import Path
-from pydantic import Field
+from urllib.parse import urlparse
+
+from pydantic import Field, model_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +12,13 @@ class Settings(BaseSettings):
     log_level: str
 
     model_provider: str = "openai"
+    auth_issuer: str = ""
+    auth_audience: str = ""
+    auth_jwks_url: str = ""
+    auth_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
+    swagger_oauth_client_id: str = ""
+    swagger_oauth_scope: str = ""
+    approval_timeout_seconds: int = Field(default=900, gt=0, le=86_400)
 
     openai_api_key: str = ""
     openai_model: str = ""
@@ -48,6 +57,42 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_swagger_oauth(self) -> "Settings":
+        self.swagger_oauth_client_id = self.swagger_oauth_client_id.strip()
+        self.swagger_oauth_scope = self.swagger_oauth_scope.strip()
+        if not self.swagger_oauth_client_id and not self.swagger_oauth_scope:
+            return self
+        if not self.swagger_oauth_client_id or not self.swagger_oauth_scope:
+            raise ValueError(
+                "Set both SWAGGER_OAUTH_CLIENT_ID and SWAGGER_OAUTH_SCOPE."
+            )
+        issuer = urlparse(self.auth_issuer.strip())
+        if (
+            issuer.scheme != "https"
+            or not issuer.netloc
+            or issuer.username
+            or issuer.password
+            or issuer.query
+            or issuer.fragment
+            or not issuer.path.endswith("/v2.0")
+        ):
+            raise ValueError("Swagger OAuth requires an HTTPS v2.0 AUTH_ISSUER.")
+        if (
+            not self.auth_audience.strip()
+            or not self.swagger_oauth_scope.startswith(
+                f"api://{self.auth_audience.strip()}/"
+            )
+            or not self.swagger_oauth_scope.rsplit("/", 1)[-1]
+            or self.swagger_oauth_scope.endswith("/.default")
+            or any(character.isspace() for character in self.swagger_oauth_scope)
+        ):
+            raise ValueError(
+                "SWAGGER_OAUTH_SCOPE must be a named delegated scope "
+                "such as api://<AUTH_AUDIENCE>/access_as_user."
+            )
+        return self
 
 
 settings = Settings()  # pyright: ignore[reportCallIssue]

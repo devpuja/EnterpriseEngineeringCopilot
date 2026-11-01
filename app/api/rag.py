@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Sequence
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.api.schemas import IndexedDocument, RAGAnswer, RAGQuery
 from app.config.settings import settings, validate_rag_settings
@@ -14,6 +14,12 @@ from app.services.document_repository import DocumentRepository
 from app.services.embedding_service import EmbeddingProvider, EmbeddingServiceError, OpenAIEmbeddingService
 from app.services.rag_service import RAGService
 from app.services.vector_store import ChromaVectorStore
+from app.security import (
+    Role,
+    UserPrincipal,
+    audit_security_event,
+    require_roles,
+)
 
 router = APIRouter(prefix="/api/v1/rag", tags=["RAG"])
 
@@ -61,7 +67,12 @@ def get_rag_service() -> RAGService:
 
 
 @router.post("/documents", response_model=IndexedDocument, status_code=201)
-async def upload_document(file: UploadFile = File(...)) -> IndexedDocument:
+async def upload_document(
+    file: UploadFile = File(...),
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
+) -> IndexedDocument:
     try:
         content = await file.read(settings.max_upload_size_bytes + 1)
         # I/O-heavy extraction and embedding run in a worker thread.
@@ -73,8 +84,10 @@ async def upload_document(file: UploadFile = File(...)) -> IndexedDocument:
                 media_type=file.content_type or "",
                 content=content,
                 max_upload_size=settings.max_upload_size_bytes,
+                owner_id=principal.owner_id,
             ))
         )
+        audit_security_event("rag_document_ingested", principal=principal, resource_id=record["document_id"])
         return IndexedDocument.model_validate(record)
     except FileTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -91,9 +104,24 @@ async def upload_document(file: UploadFile = File(...)) -> IndexedDocument:
 
 
 @router.get("/documents", response_model=list[IndexedDocument])
-async def list_documents() -> list[IndexedDocument]:
+async def list_documents(
+    principal: UserPrincipal = Depends(
+        require_roles(
+            Role.ADMINISTRATOR,
+            Role.ARCHITECT,
+            Role.DEVELOPER,
+            Role.ANALYST,
+            Role.READ_ONLY,
+        )
+    ),
+) -> list[IndexedDocument]:
     service = get_rag_service_embeddedless()
-    return [IndexedDocument.model_validate(record) for record in service.list_documents()]
+    documents = [
+        IndexedDocument.model_validate(record)
+        for record in service.list_documents(owner_id=principal.owner_id)
+    ]
+    audit_security_event("rag_document_list", principal=principal)
+    return documents
 
 
 def get_rag_service_embeddedless() -> RAGService:
@@ -121,25 +149,78 @@ class _UnusedEmbeddingProvider(EmbeddingProvider):
 
 
 @router.get("/documents/{document_id}", response_model=IndexedDocument)
-async def get_document(document_id: str) -> IndexedDocument:
-    record = get_rag_service_embeddedless().get_document(document_id)
+async def get_document(
+    document_id: str,
+    principal: UserPrincipal = Depends(
+        require_roles(
+            Role.ADMINISTRATOR,
+            Role.ARCHITECT,
+            Role.DEVELOPER,
+            Role.ANALYST,
+            Role.READ_ONLY,
+        )
+    ),
+) -> IndexedDocument:
+    record = get_rag_service_embeddedless().get_document(
+        document_id,
+        owner_id=principal.owner_id,
+    )
     if record is None:
+        audit_security_event(
+            "rag_document_access_denied",
+            principal=principal,
+            resource_id=document_id,
+            outcome="denied",
+        )
         raise HTTPException(status_code=404, detail="Indexed document not found.")
+    audit_security_event("rag_document_read", principal=principal, resource_id=document_id)
     return IndexedDocument.model_validate(record)
 
 
 @router.delete("/documents/{document_id}", status_code=204)
-async def delete_document(document_id: str) -> None:
-    deleted = get_rag_service_embeddedless().delete_document(document_id)
+async def delete_document(
+    document_id: str,
+    principal: UserPrincipal = Depends(
+        require_roles(Role.ADMINISTRATOR, Role.ARCHITECT, Role.DEVELOPER)
+    ),
+) -> None:
+    deleted = get_rag_service_embeddedless().delete_document(
+        document_id,
+        owner_id=principal.owner_id,
+    )
     if not deleted:
+        audit_security_event(
+            "rag_document_delete_denied",
+            principal=principal,
+            resource_id=document_id,
+            outcome="denied",
+        )
         raise HTTPException(status_code=404, detail="Indexed document not found.")
+    audit_security_event("rag_document_deleted", principal=principal, resource_id=document_id)
 
 
 @router.post("/query", response_model=RAGAnswer)
-async def query_documents(request: RAGQuery) -> RAGAnswer:
+async def query_documents(
+    request: RAGQuery,
+    principal: UserPrincipal = Depends(
+        require_roles(
+            Role.ADMINISTRATOR,
+            Role.ARCHITECT,
+            Role.DEVELOPER,
+            Role.ANALYST,
+            Role.READ_ONLY,
+        )
+    ),
+) -> RAGAnswer:
     try:
         service = get_rag_service()
-        return await service.answer(request.question, top_k=request.top_k)
+        answer = await service.answer(
+            request.question,
+            top_k=request.top_k,
+            owner_id=principal.owner_id,
+        )
+        audit_security_event("rag_query", principal=principal)
+        return answer
     except EmbeddingServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

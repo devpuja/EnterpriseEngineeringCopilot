@@ -1,12 +1,14 @@
 # EnterpriseEngineeringCopilot
 AI assistant for software architects, senior developers, and engineering teams.
 
-## Model configuration
+## Run configuration
 
-Set `APP_NAME`, `APP_ENV`, `LOG_LEVEL`, `MODEL_PROVIDER`, `OPENAI_API_KEY`, and
-`OPENAI_MODEL` in `.env`. The retained Microsoft Agent Framework OpenAI adapter
-uses the configured OpenAI model; no user login is required. Copy `.env.example`
-to `.env`, provide an OpenAI API key, then start the FastAPI application with
+Copy `.env.example` to `.env` and configure the model plus OIDC settings for
+your identity provider. The API validates RS256 bearer tokens against the
+configured issuer, audience, and JWKS endpoint; Microsoft Entra ID is supported.
+There is no development authentication bypass. `/` and `/health` remain public;
+all application APIs require an authenticated identity with an allowed role.
+See [Security Configuration](docs/security/CONFIGURATION.md) before starting
 `uvicorn main:app --reload`.
 
 Enterprise Software Architecture & Engineering Copilot
@@ -218,11 +220,11 @@ export the configured `output_format`.
 On Windows, managed clone cleanup retries deletion of read-only Git files after
 making those files writable; unrelated permission failures remain errors.
 
-The report/artifact registry is in-memory and scoped to one application process.
-Restarting the process invalidates API references; multi-worker deployments
-require shared persistence and artifact storage. The API does not provide
-authentication or authorization, so deploy it only behind an appropriately
-restricted boundary until those controls are implemented.
+The report/artifact registry and approval workflow are in-memory and scoped to
+one application process. Restarting the process invalidates those references;
+multi-worker deployments require shared persistence and artifact storage.
+Reports, artifacts, and RAG documents are scoped to the validated token owner.
+The API still requires a network boundary and hardened deployment configuration.
 
 
 <!-- Phase 5 — Enterprise Security and Governance
@@ -236,28 +238,18 @@ Make the copilot safe for enterprise workloads and sensitive engineering data.
 - Content safety, sensitive-data protection, audit logs, and threat modeling
 - Network isolation and least-privilege access where required -->
 
-Phase 5 — Enterprise Security
-Next: establish the security architecture and implement safeguards incrementally.
+Phase 5 — Enterprise Security and Governance
 
-Starting
-
-1. What will we build?
-The goal is to move the Copilot from a locally functioning multi-agent application toward a system with enterprise-grade security controls.
-
-5.1 — Authentication
-Establish how callers prove their identity before accessing protected APIs.
-
-5.2 — Authorization and access control
-Define which users or roles can invoke APIs, use tools, and approve actions.
-
-5.3 — Secure tool and MCP execution
-Enforce tool permissions, validate inputs, and prevent unauthorized or unsafe operations.
-
-5.4 — Approval security and audit trail
-Connect approval decisions to authenticated reviewers and record security-relevant actions.
-
-5.5 — Secrets and sensitive-data protection
-Prevent credentials, sensitive information, and internal errors from leaking through logs or API responses.
+Status: Implemented. Application APIs use OIDC/JWT authentication and role
+policies; reports, artifacts, and RAG documents are owner scoped. Approval
+requests are owner-bound for creation/cancellation and restricted to privileged
+reviewers. The application also validates MCP results, redacts common credentials
+from logs, records security events, and treats retrieved content as untrusted.
+See [Security Architecture](docs/security/SECURITY_ARCHITECTURE.md),
+[Threat Model](docs/security/THREAT_MODEL.md), and
+[Security Testing](docs/security/TESTING.md). Azure Key Vault integration,
+durable audit storage, and shared multi-worker resource storage remain
+deployment-level follow-ups.
 
 
 Phase 6 — Observability, Evaluation, LLMOps and GenAIOps
@@ -287,7 +279,9 @@ Deploy, secure, scale, and operate the end-to-end solution.
 
 ## Phase 3 — local RAG implementation
 
-Phase 3 adds a local document-grounded question-answering pipeline without Azure or authentication dependencies.
+Phase 3 adds a local document-grounded question-answering pipeline without Azure
+dependencies. Its API is now protected by the Phase 5 authentication and
+document-owner policies.
 
 ### Components
 
@@ -378,4 +372,8 @@ Documents and generated local data are stored beneath `rag_data/` by default. Re
 
 ### Security and limitations
 
-Uploaded document text is treated as untrusted. The answer prompt explicitly rejects document instructions and reports unsupported answers. ChromaDB and metadata are local to the process environment; this implementation does not provide authentication, Azure integration, cross-user authorization, encryption-at-rest services, or managed backups.
+Uploaded document text is treated as untrusted; prompt instructions are
+supplemented by API authorization and owner-filtered metadata/vector retrieval.
+ChromaDB and metadata remain local to the process environment. Encryption at
+rest, managed backups, durable audit storage, and Azure Key Vault integration
+must be supplied by the deployment environment.

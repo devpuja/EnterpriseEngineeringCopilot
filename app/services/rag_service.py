@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -22,6 +22,8 @@ from app.services.document_ingestion import (
     UnsupportedFileError,
     safe_filename,
     ingest_document,
+    stable_chunk_id,
+    stable_document_id,
 )
 from app.services.document_repository import DocumentRepository
 from app.services.embedding_service import EmbeddingProvider
@@ -255,12 +257,27 @@ class RAGService:
             )
         return self._answer_agent
 
+    def _document_path(self, document_id: str) -> Path:
+        if not re.fullmatch(r"[a-f0-9]{64}", document_id):
+            raise DocumentIngestionError("Document identifier is invalid.")
+        if self.document_directory.is_symlink():
+            raise DocumentIngestionError("Document storage root must not be a symlink.")
+        self.document_directory.mkdir(parents=True, exist_ok=True)
+        root = self.document_directory.resolve(strict=True)
+        document_path = root / document_id
+        if document_path.exists() and (
+            document_path.is_symlink() or not document_path.is_dir()
+        ):
+            raise DocumentIngestionError("Document storage path is unsafe.")
+        return document_path
+
     async def ingest(
         self,
         filename: str,
         media_type: str,
         content: bytes,
         max_upload_size: int,
+        owner_id: str | None = None,
     ) -> dict[str, Any]:
         if len(content) == 0:
             raise DocumentIngestionError("The uploaded file is empty.")
@@ -282,12 +299,29 @@ class RAGService:
                 chunk_size=self.chunk_size,
                 overlap=self.chunk_overlap,
             )
+            if owner_id is not None:
+                document_id = stable_document_id(filename, content, owner_id)
+                chunks = [
+                    replace(
+                        chunk,
+                        document_id=document_id,
+                        chunk_id=stable_chunk_id(document_id, chunk.chunk_index),
+                    )
+                    for chunk in chunks
+                ]
             embeddings = self.embedding.embed([chunk.text for chunk in chunks])
 
-            destination = self.document_directory / document_id / Path(filename).name
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            document_path = self._document_path(document_id)
+            document_path.mkdir(parents=True, exist_ok=True)
+            destination = document_path / Path(filename).name
+            if destination.is_symlink():
+                raise DocumentIngestionError("Document storage path is unsafe.")
             destination.write_bytes(content)
-            self.vectors.replace_document(chunks, embeddings)
+            self.vectors.replace_document(
+                chunks,
+                embeddings,
+                owner_id=owner_id or "",
+            )
 
             record: dict[str, Any] = {
                 "document_id": document_id,
@@ -295,6 +329,7 @@ class RAGService:
                 "media_type": media_type,
                 "size_bytes": len(content),
                 "chunk_count": len(chunks),
+                "owner_id": owner_id or "",
                 "status": "indexed",
                 "error": None,
                 "created_at": now,
@@ -304,7 +339,7 @@ class RAGService:
             return record
         except Exception as exc:
             if document_id:
-                previous = self.repository.get(document_id)
+                previous = self.repository.get(document_id, owner_id=owner_id)
                 created_at = previous["created_at"] if previous else now
                 self.repository.upsert({
                     "document_id": document_id,
@@ -312,13 +347,17 @@ class RAGService:
                     "media_type": media_type,
                     "size_bytes": len(content),
                     "chunk_count": 0,
+                    "owner_id": owner_id or "",
                     "status": "failed",
-                    "error": str(exc)[:1000],
+                    "error": "Document ingestion failed.",
                     "created_at": created_at,
                     "updated_at": utc_now(),
                 })
-                document_directory = self.document_directory / document_id
-                if document_directory.exists():
+                try:
+                    document_directory = self._document_path(document_id)
+                except DocumentIngestionError:
+                    document_directory = None
+                if document_directory is not None and document_directory.exists():
                     for path in document_directory.iterdir():
                         if path.is_file():
                             path.unlink(missing_ok=True)
@@ -326,16 +365,30 @@ class RAGService:
             logger.warning("event=document_ingestion_failed filename=%s error=%s", filename, type(exc).__name__)
             raise
 
-    def list_documents(self) -> list[dict[str, Any]]:
-        return self.repository.list()
+    def list_documents(self, owner_id: str | None = None) -> list[dict[str, Any]]:
+        return self.repository.list(owner_id=owner_id)
 
-    def get_document(self, document_id: str) -> dict[str, Any] | None:
-        return self.repository.get(document_id)
+    def get_document(
+        self,
+        document_id: str,
+        owner_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not re.fullmatch(r"[a-f0-9]{64}", document_id):
+            return None
+        return self.repository.get(document_id, owner_id=owner_id)
 
-    def delete_document(self, document_id: str) -> bool:
-        existed = self.repository.delete(document_id)
+    def delete_document(
+        self,
+        document_id: str,
+        owner_id: str | None = None,
+    ) -> bool:
+        if not re.fullmatch(r"[a-f0-9]{64}", document_id):
+            return False
+        document_directory = self._document_path(document_id)
+        existed = self.repository.delete(document_id, owner_id=owner_id)
+        if not existed:
+            return False
         self.vectors.delete_document(document_id)
-        document_directory = self.document_directory / document_id
         if document_directory.exists():
             for path in document_directory.iterdir():
                 if path.is_file():
@@ -431,7 +484,12 @@ class RAGService:
             included_chunks[key] = block[header_match.end():].strip()
         return included_chunks
 
-    async def answer(self, question: str, top_k: int | None = None) -> RAGAnswer:
+    async def answer(
+        self,
+        question: str,
+        top_k: int | None = None,
+        owner_id: str | None = None,
+    ) -> RAGAnswer:
         question = question.strip()
         if len(question) < 3:
             raise ValueError("Question must contain at least 3 characters.")
@@ -440,13 +498,27 @@ class RAGService:
 
         effective_top_k = top_k if top_k is not None else self.top_k
         embeddings = self.embedding.embed([question])
-        results = self.vectors.search(embeddings[0], top_k=effective_top_k)
+        if owner_id is None:
+            results = self.vectors.search(embeddings[0], top_k=effective_top_k)
+        else:
+            results = self.vectors.search(
+                embeddings[0],
+                top_k=effective_top_k,
+                where={"owner_id": owner_id},
+            )
         retrieved_chunk_count = len(results)
         if hasattr(self.vectors, "get_neighbor_chunks") and results:
-            results = self.vectors.get_neighbor_chunks(
-                results,
-                radius=self.adjacent_chunk_radius,
-            )
+            if owner_id is None:
+                results = self.vectors.get_neighbor_chunks(
+                    results,
+                    radius=self.adjacent_chunk_radius,
+                )
+            else:
+                results = self.vectors.get_neighbor_chunks(
+                    results,
+                    radius=self.adjacent_chunk_radius,
+                    owner_id=owner_id,
+                )
         logger.info(
             "event=rag_retrieval_completed question_chars=%d top_k=%d retrieved_chunks=%d expanded_chunks=%d",
             len(question),

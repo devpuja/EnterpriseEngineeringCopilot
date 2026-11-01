@@ -11,6 +11,7 @@ from app.repository.adapters.local_repository import LocalRepositoryAdapter
 from app.repository.reporting.models import ReportFormat
 from app.repository.workspace_manager import WorkspaceManager
 from app.services.repository_report_service import RepositoryReportService
+from app.security import Role, UserPrincipal, get_current_principal
 from main import app
 
 
@@ -133,6 +134,37 @@ def test_repository_api_rejects_unapproved_paths_and_unknown_resources(repositor
     assert client.get(
         f"/api/v1/repository-reports/artifacts/{uuid4()}/download"
     ).status_code == 404
+
+
+def test_report_and_artifact_access_is_limited_to_the_owner(repository_api):
+    repository, _, _ = repository_api
+    report_id = create_report(repository)["report"]["report_id"]
+    export = client.post(
+        f"/api/v1/repository-reports/{report_id}/exports",
+        json={"format": "markdown"},
+    )
+    assert export.status_code == 201
+    artifact_id = export.json()["artifacts"][0]["artifact_id"]
+
+    original = app.dependency_overrides[get_current_principal]
+    app.dependency_overrides[get_current_principal] = lambda: UserPrincipal(
+        subject="another-user",
+        issuer="https://test-issuer.example",
+        roles=frozenset(Role),
+    )
+    try:
+        assert client.get(
+            f"/api/v1/repository-reports/{report_id}"
+        ).status_code == 404
+        assert client.post(
+            f"/api/v1/repository-reports/{report_id}/exports",
+            json={"format": "html"},
+        ).status_code == 404
+        assert client.get(
+            f"/api/v1/repository-reports/artifacts/{artifact_id}/download"
+        ).status_code == 404
+    finally:
+        app.dependency_overrides[get_current_principal] = original
 
 
 def test_repository_api_rejects_duplicate_and_invalid_exports(repository_api):

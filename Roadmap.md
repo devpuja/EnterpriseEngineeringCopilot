@@ -26,12 +26,15 @@ Project roadmap
    - Agent-as-tool and delegation
    - Human approval and safe tool execution
    - Repository investigation and architecture reporting (Phase 4.6) - Complete
-5. Phase 5 — Enterprise Security
-   - Authentication and authorization
-   - Role-based access control
-   - Secrets and credential management
-   - Secure tool execution
-   - Data protection and audit controls
+5. Phase 5 — Enterprise Security & Governance - Complete
+   - 5.1 OIDC/JWT authentication with issuer, audience, expiry, and JWKS validation
+   - 5.2 Central role policies for application operations
+   - 5.3 Owner-scoped reports, artifacts, and RAG documents; repository path and symlink controls
+   - 5.4 Secure configuration, log redaction, and production secrets guidance
+   - 5.5 MCP tool allowlisting, argument checks, and structured-result validation
+   - 5.6 Untrusted-content boundaries and adversarial prompt-injection tests
+   - 5.7 Authenticated approval decisions, expiry, ownership, and security audit events
+   - 5.8 Authentication, authorization, isolation, redaction, and regression tests
 6. Phase 6 — Observability & Evaluation
    - Agent and workflow tracing
    - Logging and monitoring
@@ -95,4 +98,5 @@ Phase 4.6 acceptance: All seven milestones are complete. The repository analysis
 composes the existing local/GitHub adapters, static analysis, visualization,
 synthesis, review, validated report generation, export, and managed artifact
 downloads. Report and artifact references are process-local; persistent shared
-storage and API authentication remain future production requirements.
+storage remains a production requirement. API authentication and owner-scoped
+authorization are implemented in Phase 5.

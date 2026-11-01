@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import approvals
+from app.security import Role, UserPrincipal, get_current_principal
 from app.services.approval_service import ApprovalService
 
 
@@ -19,6 +20,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     test_app = FastAPI()
     test_app.include_router(approvals.router)
+    test_app.dependency_overrides[get_current_principal] = lambda: UserPrincipal(
+        subject="test-user",
+        issuer="https://test-issuer.example",
+        roles=frozenset(Role),
+    )
 
     return TestClient(test_app)
 
@@ -64,7 +70,28 @@ def test_pending_request_cannot_execute(client: TestClient) -> None:
     assert "Only approved" in response.json()["detail"]
 
 
-def test_approved_request_can_execute(client: TestClient) -> None:
+def test_requester_can_cancel_pending_request(client: TestClient) -> None:
+    request = create_request(client)
+    response = client.post(
+        f"/api/v1/approvals/{request['request_id']}/cancel"
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert client.post(
+        f"/api/v1/approvals/{request['request_id']}/execute"
+    ).status_code == 409
+
+
+def test_caller_cannot_supply_approval_reviewer_identity(client: TestClient) -> None:
+    request = create_request(client)
+    response = client.post(
+        f"/api/v1/approvals/{request['request_id']}/decision",
+        json={"approved": True, "reviewer": "forged-admin"},
+    )
+    assert response.status_code == 422
+
+
+def test_approved_request_can_execute(client: TestClient, caplog) -> None:
     request = create_request(client)
     request_id = request["request_id"]
 
@@ -72,13 +99,13 @@ def test_approved_request_can_execute(client: TestClient) -> None:
         f"/api/v1/approvals/{request_id}/decision",
         json={
             "approved": True,
-            "reviewer": "local-reviewer",
             "reason": "Approved for demonstration.",
         },
     )
 
     assert decision_response.status_code == 200
     assert decision_response.json()["status"] == "approved"
+    assert "event=approval_reviewed" in caplog.text
 
     execute_response = client.post(
         f"/api/v1/approvals/{request_id}/execute"
@@ -97,7 +124,6 @@ def test_rejected_request_cannot_execute(client: TestClient) -> None:
         f"/api/v1/approvals/{request_id}/decision",
         json={
             "approved": False,
-            "reviewer": "local-reviewer",
             "reason": "Rejected for testing.",
         },
     )
@@ -118,7 +144,6 @@ def test_request_cannot_be_decided_twice(client: TestClient) -> None:
 
     payload: dict[str, Any] = {
         "approved": True,
-        "reviewer": "local-reviewer",
     }
 
     first = client.post(
